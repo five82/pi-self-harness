@@ -1,0 +1,3 @@
+version: 1
+id: baseline
+description: Unmodified Pi prompt and default built-in tools. Resource discovery is disabled, while repository context files remain active.

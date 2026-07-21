@@ -1,0 +1,25 @@
+version: 1
+id: pi-extensions-private-etc
+repository: pi-extensions
+summary: Protect the direct macOS /private/etc system path alias.
+baseRevision: 64a9c95eeeb50fc8ca6f21684166975a1d34fc9e
+prompt: |
+  The auto-permissions deterministic write policy protects /etc, but on macOS a direct write to /private/etc/hosts is currently treated as ordinary. Fix the policy so direct writes through this macOS system-path alias are classified without weakening ordinary writes. Add focused regression coverage and keep the change minimal.
+agentTimeoutSeconds: 900
+executor:
+  type: container
+  os: linux
+  runtime: podman
+  image: node:22-bookworm
+  setupNetwork: bridge
+  agentNetwork: none
+setup:
+  command: npm ci
+  timeoutSeconds: 900
+verification:
+  command: npm test && npm run typecheck
+  timeoutSeconds: 900
+  inject:
+    - source: verifiers/pi-extensions-private-etc.test.ts
+      destination: test/self-harness-private-etc.test.ts
+tags: [typescript, bugfix, safety]

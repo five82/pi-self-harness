@@ -1,0 +1,32 @@
+{
+  "name": "pi-self-harness",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "bin": {
+    "pi-self-harness": "./src/cli.ts"
+  },
+  "scripts": {
+    "cli": "node --experimental-strip-types src/cli.ts",
+    "test": "vitest --run",
+    "typecheck": "tsc --noEmit"
+  },
+  "engines": {
+    "node": ">=22.6"
+  },
+  "dependencies": {
+    "@earendil-works/pi-coding-agent": "^0.80.10",
+    "yaml": "^2.8.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  },
+  "allowScripts": {
+    "@google/genai@1.52.0": true,
+    "esbuild@0.28.1": true,
+    "protobufjs@7.6.5": true,
+    "fsevents@2.3.3": true
+  }
+}

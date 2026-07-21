@@ -1,0 +1,92 @@
+version: 1
+repositories:
+  - id: spindle
+    path: ~/projects/spindle
+    description: Go daemon and CLI orchestrating media encoding.
+    safety:
+      notes:
+        - Local checkout is not currently available. Define verification after inventorying the repository.
+
+  - id: flyer
+    path: ~/projects/flyer
+    description: Read-only Go TUI for monitoring Spindle.
+    defaultVerification:
+      command: ./check-ci.sh
+      timeoutSeconds: 900
+    safety:
+      notes:
+        - Tests must use temporary HOME and Spindle configuration.
+
+  - id: reel
+    path: ~/projects/reel
+    description: Go/cgo AV1 encoding library and CLI.
+    defaultVerification:
+      command: ./check-ci.sh
+      timeoutSeconds: 1800
+    safety:
+      forbiddenCommands:
+        - go run ./cmd/reel
+      notes:
+        - Prefer unit tests; do not run real media encodes.
+        - Commands involving Reel need at least a 120 second timeout.
+
+  - id: infra
+    path: ~/projects/infra
+    description: Personal infrastructure managed with pyinfra.
+    defaultVerification:
+      command: uv run --group test pytest && uv run --group test ruff check .
+      timeoutSeconds: 900
+    safety:
+      forbiddenCommands:
+        - pyinfra @
+        - systemctl
+        - reboot
+        - shutdown
+        - podman
+      notes:
+        - Never deploy to or mutate a real host.
+        - Never read, create, modify, move, or print secrets.
+
+  - id: pi-extensions
+    path: ~/projects/pi-extensions
+    description: TypeScript Pi extensions, prompts, and themes.
+    defaultVerification:
+      command: npm test && npm run typecheck
+      timeoutSeconds: 900
+    safety:
+      notes:
+        - Tests must remain hermetic and must not call live providers, Herdr, or Playwright.
+
+  - id: projectgm
+    path: ~/projects/projectgm
+    description: Go and Swift single-player franchise simulation.
+    defaultVerification:
+      command: ./check-ci.sh
+      timeoutSeconds: 1200
+
+  - id: encodescripts
+    path: ~/projects/encodescripts
+    description: Personal media encoding scripts.
+    safety:
+      notes:
+        - Local checkout is not currently available. Define verification after inventorying the repository.
+        - Never run real encodes during evaluation.
+
+  - id: zbot
+    path: ~/projects/zbot
+    description: Native SwiftUI MAME frontend for Apple Silicon.
+    defaultVerification:
+      command: ./scripts/test
+      timeoutSeconds: 1800
+    executor:
+      type: local
+      os: darwin
+      arch: arm64
+      requires:
+        - xcode
+    safety:
+      forbiddenCommands:
+        - ./scripts/run
+        - ./scripts/install
+      notes:
+        - Use fake MAME executables and temporary ROM fixtures; never mutate ~/mame.
