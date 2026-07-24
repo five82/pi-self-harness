@@ -1,12 +1,20 @@
 #!/usr/bin/env -S node --experimental-strip-types
 
 import { existsSync, readdirSync } from "node:fs";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { dirname, extname, join, resolve } from "node:path";
 import { loadProfile, loadRepositoryConfig, loadSuite, loadTask } from "./config.ts";
+import { compareSuiteRuns } from "./comparison.ts";
 import { evaluate } from "./runner.ts";
-import { summarizeSuite, suiteTaskResult, taskIdsForSplit, type SuiteSplit, type SuiteTaskResult } from "./suite.ts";
+import {
+  summarizeSuite,
+  suiteTaskResult,
+  taskIdsForSplit,
+  type SuiteRunSummary,
+  type SuiteSplit,
+  type SuiteTaskResult,
+} from "./suite.ts";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const DEFAULT_REPOSITORIES = join(ROOT, "config", "repositories.yaml");
@@ -82,10 +90,14 @@ Commands:
   suite SUITE.yaml --split diagnosis|validation|test --profile PROFILE.yaml --model PROVIDER/MODEL [options]
       Run one suite split sequentially and write an aggregate summary.
 
+  compare BASELINE-SUMMARY.json CANDIDATE-SUMMARY.json [--minimum-trials N] [--output PATH]
+      Compare paired suite runs and produce a bounded promotion recommendation.
+
 Run options:
   --thinking LEVEL
   --pi-command PATH
   --runs-directory PATH
+  --trials N                 Suite repetitions; default 1.
   --keep-worktree
   --allow-unsandboxed-agent   Required acknowledgement for local (non-container) tasks.
 `;
@@ -165,6 +177,14 @@ async function run(args: ParsedArgs) {
   if (!result.passed) process.exitCode = 1;
 }
 
+function positiveIntegerFlag(args: ParsedArgs, name: string, fallback: number): number {
+  const raw = flag(args, name);
+  if (raw === undefined) return fallback;
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value < 1) throw new Error(`--${name} must be a positive integer`);
+  return value;
+}
+
 function parseSplit(args: ParsedArgs): SuiteSplit {
   const split = requiredFlag(args, "split");
   if (split !== "diagnosis" && split !== "validation" && split !== "test") {
@@ -196,39 +216,44 @@ async function runSuite(args: ParsedArgs) {
   const summaryPath = join(summaryDirectory, "summary.json");
   await mkdir(summaryDirectory, { recursive: true });
 
+  const trials = positiveIntegerFlag(args, "trials", 1);
   const taskResults: SuiteTaskResult[] = [];
-  for (const taskId of taskIds) {
-    const task = tasksById.get(taskId);
-    if (!task) throw new Error(`Unknown task ${taskId}`);
-    const repository = repositoriesById.get(task.repository);
-    if (!repository) throw new Error(`Unknown repository ${task.repository}`);
-    if (!existsSync(repository.path)) throw new Error(`Repository path does not exist: ${repository.path}`);
+  for (let trial = 1; trial <= trials; trial++) {
+    for (const taskId of taskIds) {
+      const task = tasksById.get(taskId);
+      if (!task) throw new Error(`Unknown task ${taskId}`);
+      const repository = repositoriesById.get(task.repository);
+      if (!repository) throw new Error(`Unknown repository ${task.repository}`);
+      if (!existsSync(repository.path)) throw new Error(`Repository path does not exist: ${repository.path}`);
 
-    try {
-      const evaluation = await evaluate({ task, repository, profile, model, ...options });
-      const taskResult = suiteTaskResult(evaluation.result, evaluation.resultPath);
-      taskResults.push(taskResult);
-      console.log(`${taskResult.passed ? "PASS" : "FAIL"} ${taskId} profile=${profile.id}`);
-    } catch (error) {
-      taskResults.push({
-        taskId,
-        passed: false,
-        error: error instanceof Error ? error.message : String(error),
+      try {
+        const evaluation = await evaluate({ task, repository, profile, model, ...options });
+        const taskResult = suiteTaskResult(evaluation.result, evaluation.resultPath, trial);
+        taskResults.push(taskResult);
+        console.log(`${taskResult.passed ? "PASS" : "FAIL"} ${taskId} profile=${profile.id} trial=${trial}`);
+      } catch (error) {
+        taskResults.push({
+          taskId,
+          trial,
+          passed: false,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        console.log(`ERROR ${taskId} profile=${profile.id} trial=${trial}`);
+      }
+
+      const partial = summarizeSuite({
+        suite,
+        split,
+        profileId: profile.id,
+        model,
+        thinking: options.thinking,
+        startedAt,
+        finishedAt: new Date().toISOString(),
+        trials,
+        tasks: taskResults,
       });
-      console.log(`ERROR ${taskId} profile=${profile.id}`);
+      await writeFile(summaryPath, `${JSON.stringify(partial, null, 2)}\n`, { mode: 0o600 });
     }
-
-    const partial = summarizeSuite({
-      suite,
-      split,
-      profileId: profile.id,
-      model,
-      thinking: options.thinking,
-      startedAt,
-      finishedAt: new Date().toISOString(),
-      tasks: taskResults,
-    });
-    await writeFile(summaryPath, `${JSON.stringify(partial, null, 2)}\n`, { mode: 0o600 });
   }
 
   const summary = summarizeSuite({
@@ -239,12 +264,26 @@ async function runSuite(args: ParsedArgs) {
     thinking: options.thinking,
     startedAt,
     finishedAt: new Date().toISOString(),
+    trials,
     tasks: taskResults,
   });
   await writeFile(summaryPath, `${JSON.stringify(summary, null, 2)}\n`, { mode: 0o600 });
   console.log(`${summary.passedTasks}/${summary.totalTasks} passed; cost=${summary.totalCost.toFixed(4)}`);
   console.log(summaryPath);
   if (!summary.passed) process.exitCode = 1;
+}
+
+async function compare(args: ParsedArgs) {
+  const [baselinePath, candidatePath] = args.positional;
+  if (!baselinePath || !candidatePath) throw new Error("compare requires baseline and candidate summary paths");
+  const baseline = JSON.parse(await readFile(resolve(baselinePath), "utf8")) as SuiteRunSummary;
+  const candidate = JSON.parse(await readFile(resolve(candidatePath), "utf8")) as SuiteRunSummary;
+  const comparison = compareSuiteRuns(baseline, candidate, positiveIntegerFlag(args, "minimum-trials", 3));
+  const text = `${JSON.stringify(comparison, null, 2)}\n`;
+  const output = flag(args, "output");
+  if (output) await writeFile(resolve(output), text, { mode: 0o600 });
+  process.stdout.write(text);
+  if (comparison.recommendation === "reject") process.exitCode = 1;
 }
 
 async function main() {
@@ -262,6 +301,9 @@ async function main() {
       break;
     case "suite":
       await runSuite(args);
+      break;
+    case "compare":
+      await compare(args);
       break;
     case "help":
     case "--help":

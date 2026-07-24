@@ -15,9 +15,9 @@ Foundation only:
 - host-side Pi/model credentials with container-routed read/write/edit/bash tools
 - hidden verifier files injected only after the agent exits
 - full Pi JSON trace plus compact turns/tools/errors/tokens/cost summary
-- manifest validation and sequential split-level suite execution
+- manifest validation, repeated split-level suite execution, and matched profile comparison
 
-Not implemented yet: remote Debian dispatch, hardened macOS isolation, trace mining, proposal generation, repeated paired evaluation, statistical promotion, or Terminal-Bench integration.
+Not implemented yet: remote Debian dispatch, hardened macOS isolation, trace mining, proposal generation, statistical significance testing, automatic profile installation, or Terminal-Bench integration.
 
 ## Setup
 
@@ -67,10 +67,19 @@ npm run cli -- suite suites/personal.yaml \
   --split diagnosis \
   --profile profiles/baseline.yaml \
   --model provider/model \
-  --thinking high
+  --thinking high \
+  --trials 3
 ```
 
-Tasks run sequentially. Aggregate outcomes, duration, and reported model cost are saved under `.runs/suites/<suite>/`.
+Tasks run sequentially. Aggregate correctness, duration, tool use, and reported model cost are saved under `.runs/suites/<suite>/`.
+
+Run the same split and trial count for a frozen candidate, then compare the summaries:
+
+```bash
+npm run cli -- compare BASELINE-SUMMARY.json CANDIDATE-SUMMARY.json
+```
+
+Comparison requires matching model, split, tasks, and trial numbers. Any correctness regression fails. Diagnosis candidates must show a material improvement; validation and locked-test comparisons require no regression. Three trials are required by default. These deterministic gates are preliminary and do not yet provide statistical significance testing.
 
 ## Evaluation strategy
 

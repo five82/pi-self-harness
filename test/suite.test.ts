@@ -32,10 +32,10 @@ describe("suite runs", () => {
       model: "provider/model",
       startedAt: result.startedAt,
       finishedAt: result.finishedAt,
-      tasks: [task, { taskId: "two", passed: false, cost: 0.5 }],
+      tasks: [task, { taskId: "two", trial: 1, passed: false, cost: 0.5 }],
     });
 
-    expect(task.durationMs).toBe(2_000);
-    expect(summary).toMatchObject({ passed: false, passedTasks: 1, totalTasks: 2, totalCost: 0.75 });
+    expect(task).toMatchObject({ trial: 1, durationMs: 2_000 });
+    expect(summary).toMatchObject({ passed: false, passedTasks: 1, totalTasks: 2, trials: 1, totalCost: 0.75 });
   });
 });
