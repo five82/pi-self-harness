@@ -8,6 +8,7 @@
   },
   "scripts": {
     "cli": "node --experimental-strip-types src/cli.ts",
+    "image:node22": "docker build --tag pi-self-harness/node22:bookworm images/node22",
     "test": "vitest --run",
     "typecheck": "tsc --noEmit"
   },
@@ -15,7 +16,7 @@
     "node": ">=22.6"
   },
   "dependencies": {
-    "@earendil-works/pi-coding-agent": "^0.80.10",
+    "@earendil-works/pi-coding-agent": "^0.82.0",
     "yaml": "^2.8.1"
   },
   "devDependencies": {

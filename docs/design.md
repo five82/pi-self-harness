@@ -39,12 +39,13 @@ The initial runner supports appended instructions, extension paths, and active t
 ## Run lifecycle
 
 1. Resolve an immutable base revision.
-2. Create a detached temporary Git worktree.
+2. Create a detached temporary worktree, replace its shared Git metadata with a new one-commit repository, and thereby hide later history and golden patches from the agent.
 3. Run optional trusted setup. Container setup may use network access.
 4. Start an ephemeral Pi JSON run with explicit model/profile settings. For Linux tasks, Pi remains on the host while read/write/edit/bash are routed into a capability-dropped container with network disabled by default.
-5. Run the verifier in the same task environment after the agent exits.
-6. Save trace, stderr, verifier logs, and structured result under `.runs/`.
-7. Remove the worktree unless preservation was requested.
+5. Capture the complete agent patch before hidden verifier files are injected.
+6. Run the verifier in the same task environment after the agent exits.
+7. Save trace, patch, stderr, verifier logs, and structured result under `.runs/`.
+8. Restore worktree metadata and remove the worktree unless preservation was requested.
 
 Pi resource discovery is disabled during runs. Repository `AGENTS.md`/`CLAUDE.md` context remains active because it is part of real development behavior. Profiles must explicitly list any extension under evaluation.
 

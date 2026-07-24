@@ -79,6 +79,29 @@ export interface HarnessProfile {
   tools?: string[];
 }
 
+export interface TraceUsage {
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+  reasoning: number;
+  cost: number;
+}
+
+export interface TraceSummary {
+  turns: number;
+  assistantMessages: number;
+  toolCalls: number;
+  toolErrors: number;
+  toolsByName: Record<string, number>;
+  toolErrorsByName: Record<string, number>;
+  usage: TraceUsage;
+  provider?: string;
+  model?: string;
+  finalStopReason?: string;
+  finalText?: string;
+}
+
 export interface ProcessResult {
   command: string;
   args: string[];
@@ -98,8 +121,10 @@ export interface EvaluationResult {
   profileId: string;
   model: string;
   thinking?: string;
+  piVersion?: string;
   executor: ExecutorType;
   containerImage?: string;
+  containerImageId?: string;
   startedAt: string;
   finishedAt: string;
   passed: boolean;
@@ -109,6 +134,7 @@ export interface EvaluationResult {
   sourceRevision: string;
   setup?: ProcessResult;
   agent?: ProcessResult;
+  trace?: TraceSummary;
   verification?: ProcessResult;
   injectedVerificationAssets?: string[];
   containerCleanupError?: string;

@@ -1,5 +1,5 @@
 import { constants } from "node:fs";
-import { copyFile, mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
@@ -21,6 +21,7 @@ import type {
   VerificationAsset,
 } from "./types.ts";
 import { runProcess, runShell } from "./process.ts";
+import { summarizeTrace } from "./trace.ts";
 
 const DEFAULT_AGENT_TIMEOUT_SECONDS = 900;
 const DEFAULT_COMMAND_TIMEOUT_SECONDS = 600;
@@ -96,12 +97,65 @@ export function buildPiArgs(input: {
   return args;
 }
 
-async function git(repositoryPath: string, args: string[], timeoutMs = 60_000): Promise<ProcessResult> {
-  return runProcess({ command: "git", args: ["-C", repositoryPath, ...args], cwd: repositoryPath, timeoutMs });
+async function git(
+  repositoryPath: string,
+  args: string[],
+  timeoutMs = 60_000,
+  stdoutPath?: string,
+): Promise<ProcessResult> {
+  return runProcess({
+    command: "git",
+    args: ["-C", repositoryPath, ...args],
+    cwd: repositoryPath,
+    timeoutMs,
+    stdoutPath,
+  });
 }
 
 function successful(result: ProcessResult): boolean {
   return result.code === 0 && !result.timedOut;
+}
+
+interface IsolatedGit {
+  originalLink: string;
+  baselineCommit: string;
+}
+
+async function isolateWorktreeGit(worktree: string): Promise<IsolatedGit> {
+  const gitPath = join(worktree, ".git");
+  const originalLink = await readFile(gitPath, "utf8");
+  await rm(gitPath, { force: true });
+  try {
+    for (const args of [
+      ["init", "--quiet", "--initial-branch=main"],
+      ["add", "--all"],
+      ["-c", "user.name=Pi Self Harness", "-c", "user.email=self-harness@invalid", "commit", "--quiet", "-m", "Evaluation baseline"],
+    ]) {
+      const result = await git(worktree, args, 120_000);
+      if (!successful(result)) throw new Error(`Could not isolate evaluation Git state: ${result.stderrTail || result.stdoutTail}`);
+    }
+    const baseline = await git(worktree, ["rev-parse", "HEAD"]);
+    if (!successful(baseline)) throw new Error(`Could not resolve isolated baseline: ${baseline.stderrTail}`);
+    return { originalLink, baselineCommit: baseline.stdoutTail.trim() };
+  } catch (error) {
+    await rm(gitPath, { recursive: true, force: true });
+    await writeFile(gitPath, originalLink);
+    throw error;
+  }
+}
+
+async function captureAgentPatch(worktree: string, baselineCommit: string, runDirectory: string): Promise<void> {
+  const intent = await git(worktree, ["add", "--intent-to-add", "--all"]);
+  if (!successful(intent)) throw new Error(`Could not stage untracked paths for diff capture: ${intent.stderrTail}`);
+  const patch = await git(worktree, ["diff", "--binary", baselineCommit, "--", "."], 120_000, join(runDirectory, "agent.patch"));
+  if (!successful(patch)) throw new Error(`Could not capture agent patch: ${patch.stderrTail}`);
+  const status = await git(worktree, ["status", "--short"], 60_000, join(runDirectory, "agent-status.txt"));
+  if (!successful(status)) throw new Error(`Could not capture agent status: ${status.stderrTail}`);
+}
+
+async function restoreWorktreeGit(worktree: string, originalLink: string): Promise<void> {
+  await rm(join(worktree, ".git"), { recursive: true, force: true });
+  await writeFile(join(worktree, ".git"), originalLink);
 }
 
 async function runLocalCommand(
@@ -217,6 +271,14 @@ export async function evaluate(options: EvaluateOptions): Promise<{ result: Eval
     await rm(temporaryRoot, { recursive: true, force: true });
     throw new Error(`Could not create worktree: ${worktreeResult.stderrTail}`);
   }
+  let isolatedGit: IsolatedGit;
+  try {
+    isolatedGit = await isolateWorktreeGit(worktree);
+  } catch (error) {
+    await git(options.repository.path, ["worktree", "remove", "--force", worktree], 120_000);
+    await rm(temporaryRoot, { recursive: true, force: true });
+    throw error;
+  }
 
   const startedAt = new Date().toISOString();
   const result: EvaluationResult = {
@@ -237,7 +299,14 @@ export async function evaluate(options: EvaluateOptions): Promise<{ result: Eval
   };
 
   const resultPath = join(runDirectory, "result.json");
-  const runtime = executor.runtime ?? "podman";
+  const runtime = executor.runtime ?? (process.platform === "darwin" ? "docker" : "podman");
+  const piVersion = await runProcess({
+    command: options.piCommand ?? "pi",
+    args: ["--version"],
+    cwd: worktree,
+    timeoutMs: 30_000,
+  });
+  if (successful(piVersion)) result.piVersion = piVersion.stdoutTail.trim();
   const containerBase = safeId(`psh-${runId}`).slice(-63);
   let activeContainer: string | undefined;
 
@@ -253,6 +322,15 @@ export async function evaluate(options: EvaluateOptions): Promise<{ result: Eval
     const started = await startContainer(spec, worktree);
     if (!successful(started)) throw new Error(`Could not start ${runtime} container: ${started.stderrTail || started.stdoutTail}`);
     activeContainer = name;
+    if (!result.containerImageId) {
+      const inspected = await runProcess({
+        command: runtime,
+        args: ["image", "inspect", "--format", "{{.Id}}", executor.image!],
+        cwd: worktree,
+        timeoutMs: 30_000,
+      });
+      if (successful(inspected)) result.containerImageId = inspected.stdoutTail.trim();
+    }
   };
   const stop = async (): Promise<ProcessResult | undefined> => {
     if (!activeContainer) return undefined;
@@ -307,15 +385,19 @@ export async function evaluate(options: EvaluateOptions): Promise<{ result: Eval
           }),
         }
       : process.env;
+    const agentTracePath = join(runDirectory, "agent.jsonl");
     result.agent = await runProcess({
       command: options.piCommand ?? "pi",
       args: buildPiArgs({ ...options, requiredExtensions }),
       cwd: worktree,
       env,
       timeoutMs: (options.task.agentTimeoutSeconds ?? DEFAULT_AGENT_TIMEOUT_SECONDS) * 1_000,
-      stdoutPath: join(runDirectory, "agent.jsonl"),
+      stdoutPath: agentTracePath,
       stderrPath: join(runDirectory, "agent.stderr.log"),
+      captureTail: false,
     });
+    result.trace = await summarizeTrace(agentTracePath);
+    await captureAgentPatch(worktree, isolatedGit.baselineCommit, runDirectory);
     if (!successful(result.agent)) {
       result.failureStage = "agent";
       return { result, resultPath };
@@ -350,12 +432,22 @@ export async function evaluate(options: EvaluateOptions): Promise<{ result: Eval
     if (containerStop && !successful(containerStop)) {
       result.containerCleanupError = containerStop.stderrTail || containerStop.stdoutTail;
     }
-    if (!options.keepWorktree && !activeContainer) {
+    try {
+      await restoreWorktreeGit(worktree, isolatedGit.originalLink);
+    } catch (error) {
+      result.cleanupError = `Could not restore worktree Git metadata: ${error instanceof Error ? error.message : String(error)}`;
+    }
+    if (!options.keepWorktree && !activeContainer && !result.cleanupError) {
       const cleanup = await git(options.repository.path, ["worktree", "remove", "--force", worktree], 120_000);
-      if (!successful(cleanup)) result.cleanupError = cleanup.stderrTail || cleanup.stdoutTail;
-      await rm(temporaryRoot, { recursive: true, force: true });
-    } else if (!options.keepWorktree && activeContainer) {
-      result.cleanupError = `Worktree preserved because container ${activeContainer} could not be stopped: ${worktree}`;
+      if (successful(cleanup)) await rm(temporaryRoot, { recursive: true, force: true });
+      else {
+        result.cleanupError = cleanup.stderrTail || cleanup.stdoutTail;
+        result.worktree = worktree;
+      }
+    } else if (!options.keepWorktree) {
+      result.cleanupError ??= activeContainer
+        ? `Worktree preserved because container ${activeContainer} could not be stopped: ${worktree}`
+        : `Worktree preserved after cleanup failure: ${worktree}`;
       result.worktree = worktree;
     }
     await writeFile(resultPath, `${JSON.stringify(result, null, 2)}\n`, { mode: 0o600 });

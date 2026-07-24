@@ -14,8 +14,7 @@ agentTimeoutSeconds: 900
 executor:
   type: container
   os: linux
-  runtime: podman
-  image: node:22-bookworm
+  image: pi-self-harness/node22:bookworm
   setupNetwork: bridge
   agentNetwork: none
 setup:
@@ -36,7 +35,7 @@ Rules:
 - Reconstruct the original request without exposing the final patch.
 - Prefer hidden verifier assets injected only after the agent run. Sources are relative to the task manifest; destinations must be new files inside the worktree and outside `.git`.
 - Never target an active working copy. The runner creates a detached temporary worktree.
-- Prefer a Linux container executor. Setup may use network access; the agent defaults to `agentNetwork: none`.
+- Prefer a Linux container executor. Setup may use network access; the agent defaults to `agentNetwork: none`. Runtime defaults to Docker on macOS (OrbStack) and Podman on Linux; set `runtime` only to override it.
 - Use `type: local` only for trusted platform-native tasks such as Xcode builds. Local execution requires an explicit acknowledgement flag.
 - Do not include deployment, installation, GUI-launch, production infrastructure, or real encode commands.
 - Keep diagnosis, validation, and locked-test assignments outside the task text so the proposer cannot infer them.

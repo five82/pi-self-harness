@@ -9,8 +9,7 @@ agentTimeoutSeconds: 900
 executor:
   type: container
   os: linux
-  runtime: podman
-  image: node:22-bookworm
+  image: pi-self-harness/node22:bookworm
   setupNetwork: bridge
   agentNetwork: none
 setup:

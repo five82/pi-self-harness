@@ -19,6 +19,7 @@ export interface RunProcessOptions {
   timeoutMs: number;
   stdoutPath?: string;
   stderrPath?: string;
+  captureTail?: boolean;
 }
 
 async function outputStream(path: string | undefined) {
@@ -77,11 +78,11 @@ export async function runProcess(options: RunProcessOptions): Promise<ProcessRes
     }, options.timeoutMs);
 
     child.stdout.on("data", (chunk: Buffer) => {
-      stdoutTail = appendTail(stdoutTail, chunk);
+      if (options.captureTail !== false) stdoutTail = appendTail(stdoutTail, chunk);
       stdoutFile?.write(chunk);
     });
     child.stderr.on("data", (chunk: Buffer) => {
-      stderrTail = appendTail(stderrTail, chunk);
+      if (options.captureTail !== false) stderrTail = appendTail(stderrTail, chunk);
       stderrFile?.write(chunk);
     });
 

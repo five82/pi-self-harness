@@ -10,11 +10,11 @@ Foundation only:
 
 - repository inventory and safety metadata
 - versioned task, suite, and profile schemas
-- detached-worktree single-task runner
+- detached-worktree runner with isolated one-commit Git history to prevent future-patch leakage
 - rootless Podman/Docker Linux executor with network-disabled agent containers
 - host-side Pi/model credentials with container-routed read/write/edit/bash tools
 - hidden verifier files injected only after the agent exits
-- full Pi JSON trace and verifier artifact capture
+- full Pi JSON trace plus compact turns/tools/errors/tokens/cost summary
 - manifest validation
 
 Not implemented yet: remote Debian dispatch, hardened macOS isolation, trace mining, proposal generation, repeated paired evaluation, statistical promotion, or Terminal-Bench integration.
@@ -23,6 +23,7 @@ Not implemented yet: remote Debian dispatch, hardened macOS isolation, trace min
 
 ```bash
 npm install
+npm run image:node22  # OrbStack/Docker image for TypeScript tasks
 npm test
 npm run typecheck
 ```
@@ -51,10 +52,11 @@ Artifacts are written under `.runs/<task>/<run-id>/`:
 
 - `agent.jsonl`
 - `agent.stderr.log`
+- `agent.patch` and `agent-status.txt`
 - setup and verification logs
 - `result.json`
 
-Container tasks require Podman or Docker. Pi and its model credentials remain on the host; only tool operations execute in the container. Setup can use network access, while the agent container defaults to no network.
+Container tasks require Docker (OrbStack on macOS) or Podman. Docker is the macOS default; Podman is the Linux default. Pi and its model credentials remain on the host; only tool operations execute in the container. Setup can use network access, while the agent container defaults to no network.
 
 Native macOS tasks still require `--allow-unsandboxed-agent` because temporary worktrees do not provide OS isolation. Review [`docs/design.md`](docs/design.md) before executing them.
 
