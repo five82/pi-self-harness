@@ -15,9 +15,9 @@ Foundation only:
 - host-side Pi/model credentials with container-routed read/write/edit/bash tools
 - hidden verifier files injected only after the agent exits
 - full Pi JSON trace plus compact turns/tools/errors/tokens/cost summary
-- manifest validation, repeated split-level suite execution, and matched profile comparison
+- manifest validation, bounded diagnosis-evidence mining, tool-free declarative proposal generation, repeated suite execution, and matched profile comparison
 
-Not implemented yet: remote Debian dispatch, hardened macOS isolation, trace mining, proposal generation, statistical significance testing, automatic profile installation, or Terminal-Bench integration.
+Not implemented yet: remote Debian dispatch, hardened macOS isolation, multi-candidate search, statistical significance testing, automatic profile installation, or Terminal-Bench integration.
 
 ## Setup
 
@@ -80,6 +80,21 @@ npm run cli -- compare BASELINE-SUMMARY.json CANDIDATE-SUMMARY.json
 ```
 
 Comparison requires matching model, split, tasks, and trial numbers. Any correctness regression fails. Diagnosis candidates must show a material improvement; validation and locked-test comparisons require no regression. Three trials are required by default. These deterministic gates are preliminary and do not yet provide statistical significance testing.
+
+## Mine and propose
+
+Only diagnosis summaries may feed proposal generation. Mining selects bounded agent-visible metrics and final reports; verifier output is excluded.
+
+```bash
+npm run cli -- mine DIAGNOSIS-SUMMARY.json --output evidence.json
+npm run cli -- propose evidence.json \
+  --id candidate-one \
+  --model provider/proposal-model \
+  --thinking high \
+  --output profiles/candidate-one.yaml
+```
+
+The proposer is a separate ephemeral Pi process with no tools, resources, context files, or project trust. It also receives structured rejected hypotheses from [`config/proposal-history.yaml`](config/proposal-history.yaml) to discourage repeating known regressions. Its output must pass the profile schema and may contain only one appended instruction or a subset of the four container-routed tools. Generated profiles are never installed or promoted automatically; review one before evaluation.
 
 ## Evaluation strategy
 

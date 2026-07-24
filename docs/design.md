@@ -34,7 +34,7 @@ Candidates may not change:
 - repository instructions
 - engine source
 
-The initial runner supports appended instructions, extension paths, and active tools. Runtime middleware candidates come later, after a stable safety boundary exists.
+The runner supports appended instructions and a subset of the four container-routed tools. Candidate profiles cannot load extensions or add capabilities. Runtime middleware candidates would require a separately designed trusted boundary.
 
 ## Run lifecycle
 
@@ -47,7 +47,7 @@ The initial runner supports appended instructions, extension paths, and active t
 7. Save trace, patch, stderr, verifier logs, and structured result under `.runs/`.
 8. Restore worktree metadata and remove the worktree unless preservation was requested.
 
-Pi resource discovery is disabled during runs. Repository `AGENTS.md`/`CLAUDE.md` context remains active because it is part of real development behavior. Profiles must explicitly list any extension under evaluation.
+Pi resource discovery is disabled during runs. Repository `AGENTS.md`/`CLAUDE.md` context remains active because it is part of real development behavior. The container-routing extension is trusted evaluator infrastructure, not candidate-controlled configuration.
 
 ## Executors and safety
 
@@ -64,6 +64,12 @@ This materially isolates tools but is not a proof-grade sandbox: the container i
 Xcode/zbot tasks currently execute locally because Xcode cannot run in a Linux container. A detached worktree protects the active checkout but Bash still has the user's permissions. The CLI therefore requires `--allow-unsandboxed-agent` for local runs. Use only reviewed historical tasks until a dedicated macOS user or VM executor exists.
 
 Remote dispatch to the Debian 13 host is a later orchestration layer; the same repository can already run container tasks directly when cloned there.
+
+## Weakness mining and proposals
+
+Only diagnosis summaries can become proposal evidence. The miner copies aggregate correctness, cost, duration, tool counts, bounded agent-visible tool-error text, stop reason, and bounded final agent reports. It does not copy verifier commands, injected assets, or verifier output.
+
+A separate ephemeral Pi process receives that evidence plus structured prior rejections from `config/proposal-history.yaml`, with tools, resource discovery, context files, sessions, and project trust disabled. Its response is parsed as a declarative profile. Unknown fields, executable extensions, unsupported tools, mixed prompt/tool changes, oversized instructions, and direct diagnosis-task references are rejected. A generated profile remains an untrusted candidate requiring review and evaluation.
 
 ## Promotion policy
 

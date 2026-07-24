@@ -1,0 +1,10 @@
+version: 1
+rejections:
+  - id: gpt-5.6-sol-offline-aware
+    model: openai-codex/gpt-5.6-sol
+    hypothesis: Explicitly telling the model that evaluation is network-isolated will prevent wasted network-dependent checks.
+    reason: The candidate passed but increased tool errors, duration, and reported cost by probing unavailable offline tools after a network-dependent wrapper failed.
+  - id: gpt-5.6-sol-candidate
+    model: openai-codex/gpt-5.6-sol
+    hypothesis: After a download-related validation failure, stop retrying or probing alternatives while continuing distinct checks that use available tooling.
+    reason: Across three paired diagnosis trials, correctness was unchanged and tool errors fell by one, but reported cost increased 7.5%, exceeding the 5% efficiency guardrail; the candidate was rejected before validation.

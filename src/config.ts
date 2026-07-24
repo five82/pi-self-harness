@@ -2,6 +2,7 @@ import { existsSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, resolve } from "node:path";
 import { parse } from "yaml";
+import { assertAllowedProfileTools } from "./profile.ts";
 import type {
   CommandSpec,
   EvaluationSuite,
@@ -218,12 +219,17 @@ export function loadSuite(path: string): EvaluationSuite {
 export function loadProfile(path: string): HarnessProfile {
   const input = object(document(path), path);
   version(input.version, `${path}.version`);
-  if (input.extensions !== undefined) fail(`${path}.extensions`, "candidate profiles cannot load executable extensions");
+  const allowed = new Set(["version", "id", "description", "systemPromptAppend", "tools"]);
+  for (const key of Object.keys(input)) {
+    if (!allowed.has(key)) fail(`${path}.${key}`, "unsupported candidate profile field");
+  }
+  const tools = strings(input.tools, `${path}.tools`);
+  assertAllowedProfileTools(tools, `${path}.tools`);
   return {
     version: 1,
     id: string(input.id, `${path}.id`),
     description: optionalString(input.description, `${path}.description`),
     systemPromptAppend: optionalString(input.systemPromptAppend, `${path}.systemPromptAppend`),
-    tools: strings(input.tools, `${path}.tools`),
+    tools,
   };
 }

@@ -65,6 +65,28 @@ tools: [read, bash, edit, write]
     expect(loadProfile(profilePath).tools).toEqual(["read", "bash", "edit", "write"]);
   });
 
+  it("rejects executable and unknown profile fields", () => {
+    const path = fixture(
+      "profile.yaml",
+      `version: 1
+id: unsafe-extension
+extensions: [extension.ts]
+`,
+    );
+    expect(() => loadProfile(path)).toThrow(/unsupported candidate profile field/);
+  });
+
+  it("rejects profile tools that could bypass container routing", () => {
+    const path = fixture(
+      "profile.yaml",
+      `version: 1
+id: unsafe-tools
+tools: [read, grep]
+`,
+    );
+    expect(() => loadProfile(path)).toThrow(/unsupported tool.*grep/);
+  });
+
   it("loads a Linux container executor", () => {
     const path = fixture(
       "task.yaml",

@@ -1,12 +1,24 @@
 #!/usr/bin/env -S node --experimental-strip-types
 
 import { existsSync, readdirSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { dirname, extname, join, resolve } from "node:path";
 import { loadProfile, loadRepositoryConfig, loadSuite, loadTask } from "./config.ts";
 import { compareSuiteRuns } from "./comparison.ts";
+import { buildWeaknessEvidence, extractToolErrorEvidence, type ToolErrorEvidence, type WeaknessEvidence } from "./mining.ts";
+import {
+  buildProposalPiArgs,
+  buildProposalPrompt,
+  formatProfile,
+  parseProposalHistory,
+  parseProposedProfile,
+} from "./proposal.ts";
+import { runProcess } from "./process.ts";
 import { evaluate } from "./runner.ts";
+import { summarizeTraceText } from "./trace.ts";
+import type { EvaluationResult, HarnessProfile } from "./types.ts";
 import {
   summarizeSuite,
   suiteTaskResult,
@@ -18,6 +30,7 @@ import {
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const DEFAULT_REPOSITORIES = join(ROOT, "config", "repositories.yaml");
+const DEFAULT_PROPOSAL_HISTORY = join(ROOT, "config", "proposal-history.yaml");
 
 interface ParsedArgs {
   positional: string[];
@@ -93,11 +106,18 @@ Commands:
   compare BASELINE-SUMMARY.json CANDIDATE-SUMMARY.json [--minimum-trials N] [--output PATH]
       Compare paired suite runs and produce a bounded promotion recommendation.
 
+  mine DIAGNOSIS-SUMMARY.json [--output PATH]
+      Extract bounded, agent-visible weakness evidence from diagnosis results.
+
+  propose EVIDENCE.json --id ID --model PROVIDER/MODEL --output PROFILE.yaml [--history PATH] [options]
+      Ask a tool-free Pi process for one bounded declarative candidate profile.
+
 Run options:
   --thinking LEVEL
   --pi-command PATH
   --runs-directory PATH
   --trials N                 Suite repetitions; default 1.
+  --proposal-timeout SECONDS Proposal timeout; default 300.
   --keep-worktree
   --allow-unsandboxed-agent   Required acknowledgement for local (non-container) tasks.
 `;
@@ -117,6 +137,7 @@ async function showRepositories(args: ParsedArgs) {
 
 async function validate(args: ParsedArgs) {
   const config = loadRepositoryConfig(repositoriesPath(args));
+  if (existsSync(DEFAULT_PROPOSAL_HISTORY)) parseProposalHistory(await readFile(DEFAULT_PROPOSAL_HISTORY, "utf8"));
   const repositoryIds = new Set(config.repositories.map((repository) => repository.id));
   const profiles = yamlFiles(join(ROOT, "profiles"));
   const tasks = yamlFiles(join(ROOT, "tasks"));
@@ -281,9 +302,119 @@ async function compare(args: ParsedArgs) {
   const comparison = compareSuiteRuns(baseline, candidate, positiveIntegerFlag(args, "minimum-trials", 3));
   const text = `${JSON.stringify(comparison, null, 2)}\n`;
   const output = flag(args, "output");
-  if (output) await writeFile(resolve(output), text, { mode: 0o600 });
+  if (output) {
+    const outputPath = resolve(output);
+    await mkdir(dirname(outputPath), { recursive: true });
+    await writeFile(outputPath, text, { mode: 0o600 });
+  }
   process.stdout.write(text);
   if (comparison.recommendation === "reject") process.exitCode = 1;
+}
+
+async function mine(args: ParsedArgs) {
+  const summaryPath = args.positional[0];
+  if (!summaryPath) throw new Error("mine requires a diagnosis summary path");
+  const summary = JSON.parse(await readFile(resolve(summaryPath), "utf8")) as SuiteRunSummary;
+  const results = new Map<string, EvaluationResult>();
+  const toolErrors = new Map<string, ToolErrorEvidence[]>();
+  for (const task of summary.tasks) {
+    if (!task.resultPath || results.has(task.resultPath)) continue;
+    results.set(task.resultPath, JSON.parse(await readFile(task.resultPath, "utf8")) as EvaluationResult);
+    const tracePath = join(dirname(task.resultPath), "agent.jsonl");
+    if (existsSync(tracePath)) toolErrors.set(task.resultPath, extractToolErrorEvidence(await readFile(tracePath, "utf8")));
+  }
+  const evidence = buildWeaknessEvidence(summary, results, toolErrors);
+  const text = `${JSON.stringify(evidence, null, 2)}\n`;
+  const output = flag(args, "output");
+  if (output) {
+    const outputPath = resolve(output);
+    await mkdir(dirname(outputPath), { recursive: true });
+    await writeFile(outputPath, text, { flag: "wx", mode: 0o600 });
+  } else {
+    process.stdout.write(text);
+  }
+}
+
+async function propose(args: ParsedArgs) {
+  const evidencePath = args.positional[0];
+  if (!evidencePath) throw new Error("propose requires a weakness evidence path");
+  const candidateId = requiredFlag(args, "id");
+  const model = requiredFlag(args, "model");
+  const outputPath = resolve(requiredFlag(args, "output"));
+  if (existsSync(outputPath)) throw new Error(`Output already exists: ${outputPath}`);
+  const evidenceText = await readFile(resolve(evidencePath), "utf8");
+  const evidence = JSON.parse(evidenceText) as WeaknessEvidence;
+  if (evidence.version !== 1 || evidence.split !== "diagnosis" || !Array.isArray(evidence.tasks)) {
+    throw new Error("Invalid weakness evidence document");
+  }
+
+  const thinking = flag(args, "thinking") ?? evidence.thinking;
+  const historyPath = resolve(flag(args, "history") ?? DEFAULT_PROPOSAL_HISTORY);
+  const historyText = existsSync(historyPath) ? await readFile(historyPath, "utf8") : "version: 1\nrejections: []\n";
+  const history = parseProposalHistory(historyText).filter((rejection) => !rejection.model || rejection.model === evidence.model);
+  const startedAt = new Date().toISOString();
+  const runId = `${startedAt.replace(/[:.]/g, "-")}_${candidateId}`.replace(/[^A-Za-z0-9._-]+/g, "-");
+  const runDirectory = resolve(
+    flag(args, "runs-directory") ?? join(ROOT, ".runs"),
+    "proposals",
+    candidateId,
+    runId,
+  );
+  await mkdir(runDirectory, { recursive: true });
+  const tracePath = join(runDirectory, "proposal.jsonl");
+  const stderrPath = join(runDirectory, "proposal.stderr.log");
+  const prompt = buildProposalPrompt(evidence, candidateId, history);
+  const piArgs = buildProposalPiArgs({ model, thinking, prompt });
+
+  const processResult = await runProcess({
+    command: flag(args, "pi-command") ?? "pi",
+    args: piArgs,
+    cwd: ROOT,
+    env: { ...process.env, PI_SKIP_VERSION_CHECK: "1", PI_TELEMETRY: "0" },
+    timeoutMs: positiveIntegerFlag(args, "proposal-timeout", 300) * 1_000,
+    stdoutPath: tracePath,
+    stderrPath,
+  });
+  const trace = summarizeTraceText(processResult.stdoutTail);
+  let error: string | undefined;
+  let profile: HarnessProfile | undefined;
+  try {
+    if (processResult.code !== 0 || processResult.timedOut) {
+      throw new Error(processResult.stderrTail || `Pi proposal process exited with code ${processResult.code}`);
+    }
+    if (!trace.finalText) throw new Error("Pi proposal process returned no final text");
+    profile = parseProposedProfile(trace.finalText, candidateId, evidence);
+    await mkdir(dirname(outputPath), { recursive: true });
+    await writeFile(outputPath, formatProfile(profile), { flag: "wx", mode: 0o600 });
+    loadProfile(outputPath);
+  } catch (caught) {
+    error = caught instanceof Error ? caught.message : String(caught);
+  }
+
+  const proposalResult = {
+    version: 1,
+    runId,
+    startedAt,
+    finishedAt: new Date().toISOString(),
+    evidencePath: resolve(evidencePath),
+    evidenceSha256: createHash("sha256").update(evidenceText).digest("hex"),
+    historyPath,
+    historySha256: createHash("sha256").update(historyText).digest("hex"),
+    targetModel: evidence.model,
+    proposalModel: model,
+    thinking,
+    outputPath,
+    generated: Boolean(profile),
+    error,
+    tracePath,
+    process: { ...processResult, stdoutTail: "" },
+    trace,
+  };
+  const resultPath = join(runDirectory, "result.json");
+  await writeFile(resultPath, `${JSON.stringify(proposalResult, null, 2)}\n`, { mode: 0o600 });
+  if (error) throw new Error(`${error}\n${resultPath}`);
+  console.log(outputPath);
+  console.log(resultPath);
 }
 
 async function main() {
@@ -304,6 +435,12 @@ async function main() {
       break;
     case "compare":
       await compare(args);
+      break;
+    case "mine":
+      await mine(args);
+      break;
+    case "propose":
+      await propose(args);
       break;
     case "help":
     case "--help":
