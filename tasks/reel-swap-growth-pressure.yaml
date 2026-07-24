@@ -1,0 +1,24 @@
+version: 1
+id: reel-swap-growth-pressure
+repository: reel
+summary: Avoid throttling healthy encodes because of harmless swap churn.
+baseRevision: 4509f5296226cc73e523008da98f813bd5d37336
+prompt: |
+  Reel's critical memory guard correctly ignores swap growth while plenty of memory remains available, but its worker-reduction path still treats swap growth alone as pressure. On a healthy 4K encode, ordinary page-cache churn grew swap while 59-75% of memory remained available, repeatedly reducing workers until only one remained. Make worker reductions follow the same invariant: swap growth at healthy availability is not memory pressure; low available memory must still reduce workers, and swap growth may still control reduction severity once inside that pressure band. Add a focused regression test and keep the change scoped to the adaptive limiter. Native media libraries are intentionally unavailable in this evaluator, so test the pure limiter by compiling `internal/encode/adaptive.go` with the focused test rather than building or encoding with full Reel.
+agentTimeoutSeconds: 900
+executor:
+  type: container
+  os: linux
+  image: pi-self-harness/go126:bookworm
+  setupNetwork: bridge
+  agentNetwork: none
+setup:
+  command: go mod download
+  timeoutSeconds: 900
+verification:
+  command: sh self_harness_reel_pressure_verify.sh
+  timeoutSeconds: 900
+  inject:
+    - source: verifiers/reel-swap-growth-pressure.sh
+      destination: self_harness_reel_pressure_verify.sh
+tags: [go, bugfix, performance, safety]

@@ -1,0 +1,24 @@
+version: 1
+id: projectgm-complete-weekly-schedule
+repository: projectgm
+summary: Arrange the regular-season matchups into a complete weekly slate.
+baseRevision: 9919a09701a26235a7b5475b333c5744e3878c4d
+prompt: |
+  ProjectGM generates the right season matchups, but its greedy week assignment can create bye gaps and extra weeks, while division rematches may bunch together. Turn the existing matchup rotations into a complete 16-week regular-season slate: every team must play exactly once each week, division games must split three per team into each half, the finale must be divisional, and no team may face the same opponent in consecutive weeks. Preserve determinism, home/away balance, opponent limits, and the existing multi-year intra- and cross-conference rotations. Add focused schedule tests and keep the change in the scheduling package.
+agentTimeoutSeconds: 1200
+executor:
+  type: container
+  os: linux
+  image: pi-self-harness/go126:bookworm
+  setupNetwork: bridge
+  agentNetwork: none
+setup:
+  command: go mod download
+  timeoutSeconds: 300
+verification:
+  command: go test ./...
+  timeoutSeconds: 900
+  inject:
+    - source: verifiers/projectgm-complete-weekly-schedule_test.go
+      destination: internal/league/self_harness_complete_schedule_test.go
+tags: [go, feature, scheduling, algorithm]

@@ -4,5 +4,7 @@ description: Private replay tasks representing five82's real development work.
 diagnosis:
   - pi-extensions-private-etc
   - flyer-spindle-api-config
-validation: []
-test: []
+validation:
+  - reel-swap-growth-pressure
+test:
+  - projectgm-complete-weekly-schedule
