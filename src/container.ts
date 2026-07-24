@@ -44,7 +44,7 @@ export function buildContainerRunArgs(spec: ContainerSpec): string[] {
     "--env",
     "UV_CACHE_DIR=/cache/uv",
     "--tmpfs",
-    "/tmp:rw,nosuid,nodev,size=2147483648",
+    "/tmp:rw,exec,nosuid,nodev,size=2147483648",
   ];
 
   if (spec.runtime === "podman") args.push("--userns=keep-id");

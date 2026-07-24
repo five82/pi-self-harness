@@ -1,0 +1,24 @@
+version: 1
+id: flyer-spindle-api-config
+repository: flyer
+summary: Align local API discovery with Spindle's nested API configuration.
+baseRevision: b20f596f089a6c534b17d92e1baee1d6f12b89c6
+prompt: |
+  Flyer still discovers Spindle through the obsolete top-level `api_bind` setting and invents a default listener when no local config exists. Current Spindle configuration stores `bind` and `token` under `[api]`, and its API listener is disabled unless configured. Update Flyer's local discovery to read and trim those nested values. Explicit API endpoint and token options must continue to win; otherwise the discovered token should be used. A missing config must remain valid without pretending a listener exists. Add focused tests and keep the change scoped to API discovery.
+agentTimeoutSeconds: 900
+executor:
+  type: container
+  os: linux
+  image: pi-self-harness/go126:bookworm
+  setupNetwork: bridge
+  agentNetwork: none
+setup:
+  command: go mod download
+  timeoutSeconds: 900
+verification:
+  command: go test ./...
+  timeoutSeconds: 900
+  inject:
+    - source: verifiers/flyer-spindle-api-config_test.go
+      destination: internal/config/self_harness_api_config_test.go
+tags: [go, bugfix, config]

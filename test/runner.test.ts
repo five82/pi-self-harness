@@ -1,5 +1,8 @@
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { assertCommandAllowed, buildPiArgs } from "../src/runner.ts";
+import { assertCommandAllowed, buildPiArgs, removeTemporaryRoot } from "../src/runner.ts";
 import type { HarnessProfile, RepositoryDefinition, TaskDefinition } from "../src/types.ts";
 
 const task: TaskDefinition = {
@@ -34,6 +37,18 @@ describe("runner", () => {
     expect(args).toContain("Verify before finishing.");
     expect(args).toContain("/tmp/container-tools.ts");
     expect(args.at(-1)).toBe("Fix the bug.");
+  });
+
+  it("removes read-only tool caches", async () => {
+    const root = mkdtempSync(join(tmpdir(), "pi-self-harness-cache-test-"));
+    const cache = join(root, "module");
+    mkdirSync(cache);
+    writeFileSync(join(cache, "source.go"), "package fixture\n");
+    chmodSync(cache, 0o555);
+
+    await removeTemporaryRoot(root);
+
+    expect(existsSync(root)).toBe(false);
   });
 
   it("rejects configured dangerous setup or verifier commands", () => {

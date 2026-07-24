@@ -3,5 +3,6 @@ id: personal
 description: Private replay tasks representing five82's real development work.
 diagnosis:
   - pi-extensions-private-etc
+  - flyer-spindle-api-config
 validation: []
 test: []

@@ -116,6 +116,12 @@ function successful(result: ProcessResult): boolean {
   return result.code === 0 && !result.timedOut;
 }
 
+export async function removeTemporaryRoot(path: string): Promise<void> {
+  // Go's module cache intentionally contains read-only directories.
+  await runProcess({ command: "chmod", args: ["-R", "u+w", path], cwd: dirname(path), timeoutMs: 120_000 });
+  await rm(path, { recursive: true, force: true });
+}
+
 interface IsolatedGit {
   originalLink: string;
   baselineCommit: string;
@@ -268,7 +274,7 @@ export async function evaluate(options: EvaluateOptions): Promise<{ result: Eval
   await mkdir(cacheDirectory, { recursive: true });
   const worktreeResult = await git(options.repository.path, ["worktree", "add", "--detach", worktree, sourceRevision], 120_000);
   if (!successful(worktreeResult)) {
-    await rm(temporaryRoot, { recursive: true, force: true });
+    await removeTemporaryRoot(temporaryRoot);
     throw new Error(`Could not create worktree: ${worktreeResult.stderrTail}`);
   }
   let isolatedGit: IsolatedGit;
@@ -276,7 +282,7 @@ export async function evaluate(options: EvaluateOptions): Promise<{ result: Eval
     isolatedGit = await isolateWorktreeGit(worktree);
   } catch (error) {
     await git(options.repository.path, ["worktree", "remove", "--force", worktree], 120_000);
-    await rm(temporaryRoot, { recursive: true, force: true });
+    await removeTemporaryRoot(temporaryRoot);
     throw error;
   }
 
@@ -439,8 +445,13 @@ export async function evaluate(options: EvaluateOptions): Promise<{ result: Eval
     }
     if (!options.keepWorktree && !activeContainer && !result.cleanupError) {
       const cleanup = await git(options.repository.path, ["worktree", "remove", "--force", worktree], 120_000);
-      if (successful(cleanup)) await rm(temporaryRoot, { recursive: true, force: true });
-      else {
+      if (successful(cleanup)) {
+        try {
+          await removeTemporaryRoot(temporaryRoot);
+        } catch (error) {
+          result.cleanupError = `Could not remove temporary cache: ${error instanceof Error ? error.message : String(error)}`;
+        }
+      } else {
         result.cleanupError = cleanup.stderrTail || cleanup.stdoutTail;
         result.worktree = worktree;
       }

@@ -9,6 +9,8 @@
   "scripts": {
     "cli": "node --experimental-strip-types src/cli.ts",
     "image:node22": "docker build --tag pi-self-harness/node22:bookworm images/node22",
+    "image:go126": "docker build --tag pi-self-harness/go126:bookworm images/go126",
+    "images": "npm run image:node22 && npm run image:go126",
     "test": "vitest --run",
     "typecheck": "tsc --noEmit"
   },

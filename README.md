@@ -15,7 +15,7 @@ Foundation only:
 - host-side Pi/model credentials with container-routed read/write/edit/bash tools
 - hidden verifier files injected only after the agent exits
 - full Pi JSON trace plus compact turns/tools/errors/tokens/cost summary
-- manifest validation
+- manifest validation and sequential split-level suite execution
 
 Not implemented yet: remote Debian dispatch, hardened macOS isolation, trace mining, proposal generation, repeated paired evaluation, statistical promotion, or Terminal-Bench integration.
 
@@ -23,7 +23,7 @@ Not implemented yet: remote Debian dispatch, hardened macOS isolation, trace min
 
 ```bash
 npm install
-npm run image:node22  # OrbStack/Docker image for TypeScript tasks
+npm run images        # OrbStack/Docker images for TypeScript and Go tasks
 npm test
 npm run typecheck
 ```
@@ -60,6 +60,18 @@ Container tasks require Docker (OrbStack on macOS) or Podman. Docker is the macO
 
 Native macOS tasks still require `--allow-unsandboxed-agent` because temporary worktrees do not provide OS isolation. Review [`docs/design.md`](docs/design.md) before executing them.
 
+## Run a suite split
+
+```bash
+npm run cli -- suite suites/personal.yaml \
+  --split diagnosis \
+  --profile profiles/baseline.yaml \
+  --model provider/model \
+  --thinking high
+```
+
+Tasks run sequentially. Aggregate outcomes, duration, and reported model cost are saved under `.runs/suites/<suite>/`.
+
 ## Evaluation strategy
 
 - Personal historical tasks are the primary optimization target.
@@ -67,3 +79,5 @@ Native macOS tasks still require `--allow-unsandboxed-agent` because temporary w
 - Safety tasks are a hard gate.
 - Live Pi sessions provide weakness-mining evidence but are not directly comparable evaluations.
 - Diagnosis, validation, and truly locked test splits remain separate.
+
+Preliminary candidate outcomes and rejection rationale are recorded in [`docs/experiments.md`](docs/experiments.md).

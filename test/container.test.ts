@@ -16,6 +16,7 @@ describe("container executor", () => {
     expect(args).toContain("--security-opt=no-new-privileges");
     expect(args).toContain("--userns=keep-id");
     expect(args).toContain("/tmp/worktree:/workspace:rw");
+    expect(args).toContain("/tmp:rw,exec,nosuid,nodev,size=2147483648");
     expect(args).toContain("none");
     expect(args).toContain("node:22-bookworm");
   });
