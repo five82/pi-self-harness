@@ -57,6 +57,8 @@ class PiHostAgent(BaseAgent):
         default_extension = Path(__file__).resolve().parents[2] / "extension" / "harbor-tools.ts"
         self._extension_path = Path(extension_path or default_extension).resolve()
         self._version = self._detect_version()
+        self._benchmark_provenance_sha256: str | None = None
+        self._benchmark_source_revision: str | None = None
 
     @staticmethod
     @override
@@ -114,6 +116,39 @@ class PiHostAgent(BaseAgent):
         except Exception:
             return "unknown"
 
+    @staticmethod
+    def _tree_hash(root: Path) -> str:
+        digest = hashlib.sha256()
+        for path in sorted(item for item in root.rglob("*") if item.is_file()):
+            relative = path.relative_to(root).as_posix().encode()
+            digest.update(len(relative).to_bytes(8, "big"))
+            digest.update(relative)
+            content = path.read_bytes()
+            digest.update(len(content).to_bytes(8, "big"))
+            digest.update(content)
+        return digest.hexdigest()
+
+    def _validate_benchmark_provenance(self, environment: BaseEnvironment) -> None:
+        task_root = Path(environment.environment_dir).resolve().parent
+        provenance_path = task_root.parent / "PROVENANCE.json"
+        if not provenance_path.is_file():
+            return
+        content = provenance_path.read_bytes()
+        provenance = json.loads(content)
+        config_path = Path(__file__).resolve().parents[2] / "benchmarks" / "terminal-bench-2" / "subset.json"
+        expected_config_sha = hashlib.sha256(config_path.read_bytes()).hexdigest()
+        if provenance.get("configSha256") != expected_config_sha:
+            raise ValueError("Terminal-Bench provenance does not match the trusted subset config")
+        task_name = task_root.name
+        expected_tree = (provenance.get("materializedTaskSha256") or {}).get(task_name)
+        if not isinstance(expected_tree, str) or self._tree_hash(task_root) != expected_tree:
+            raise ValueError(f"Terminal-Bench task tree changed after materialization: {task_name}")
+        revision = provenance.get("sourceRevision")
+        if not isinstance(revision, str) or not revision:
+            raise ValueError("Terminal-Bench provenance has no source revision")
+        self._benchmark_provenance_sha256 = hashlib.sha256(content).hexdigest()
+        self._benchmark_source_revision = revision
+
     @override
     async def setup(self, environment: BaseEnvironment) -> None:
         if not self._extension_path.is_file():
@@ -122,6 +157,7 @@ class PiHostAgent(BaseAgent):
             raise FileNotFoundError(f"Host Pi executable not found: {self._pi_path}")
         if not self.model_name or "/" not in self.model_name:
             raise ValueError("model_name must use provider/model format")
+        self._validate_benchmark_provenance(environment)
 
     async def _send(self, writer: asyncio.StreamWriter, value: dict[str, Any]) -> None:
         writer.write(json.dumps(value, separators=(",", ":")).encode() + b"\n")
@@ -350,6 +386,8 @@ class PiHostAgent(BaseAgent):
                 "thinking": self._thinking,
                 "profile_path": str(self._profile_path) if self._profile_path else None,
                 "profile_sha256": self._profile_sha256,
+                "benchmark_provenance_sha256": self._benchmark_provenance_sha256,
+                "benchmark_source_revision": self._benchmark_source_revision,
             }
         except asyncio.CancelledError:
             if process and process.returncode is None:

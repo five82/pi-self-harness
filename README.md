@@ -18,7 +18,7 @@ Foundation only:
 - manifest validation, bounded diagnosis-evidence mining, tool-free declarative proposal generation, shared-baseline candidate screening, repeated suite execution, and matched profile comparison
 - pinned Terminal-Bench 2.0 subset support through Harbor's external-agent API
 
-Not implemented yet: remote Debian dispatch, hardened macOS isolation, confidence-aware promotion gates, automatic profile installation, or integrated Terminal-Bench comparison gates.
+Not implemented yet: remote Debian dispatch, hardened macOS isolation, confidence-aware promotion gates, automatic profile installation, or interleaved Terminal-Bench execution.
 
 ## Setup
 
@@ -156,7 +156,17 @@ PYTHONPATH=/path/to/pi-self-harness uv run harbor run \
   --yes
 ```
 
-Keep the Harbor and dataset checkouts at the recorded revisions. Run baseline and frozen candidate as separate jobs with identical task, model, thinking, and Harbor settings. Do not expose these results to proposal generation before the candidate is frozen. Harbor comparison ingestion and automatic promotion gates remain future work.
+Keep the Harbor and dataset checkouts at the recorded revisions. Run baseline and frozen candidate as separate jobs with identical task, model, thinking, and Harbor settings. Then require no per-task reward regression and bounded aggregate cost:
+
+```bash
+npm run cli -- terminal-bench-compare \
+  .runs/terminal-bench/BASELINE-JOB \
+  .runs/terminal-bench/CANDIDATE-JOB \
+  --max-cost-regression 0.10 \
+  --output .runs/terminal-bench/comparison.json
+```
+
+The comparison rejects incomplete/errored jobs, mismatched task checksums or execution identities, any per-task mean-reward regression, and cost increases over the configured limit. Do not expose benchmark results to proposal generation before the candidate is frozen. Interleaved Harbor execution and a combined cross-suite promotion command remain future work.
 
 ## Evaluation strategy
 

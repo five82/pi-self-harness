@@ -28,6 +28,7 @@ import {
   type ScreeningExecution,
   type ScreeningSummary,
 } from "./screening.ts";
+import { compareTerminalBenchJobs, loadTerminalBenchJob } from "./terminal-bench.ts";
 import type { EvaluationResult, HarnessProfile } from "./types.ts";
 import {
   summarizeSuite,
@@ -124,6 +125,9 @@ Commands:
 
   compare BASELINE-SUMMARY.json CANDIDATE-SUMMARY.json [--minimum-trials N] [--output PATH]
       Compare paired suite runs and produce a bounded promotion recommendation.
+
+  terminal-bench-compare BASELINE-JOB CANDIDATE-JOB [--max-cost-regression FRACTION] [--output PATH]
+      Compare complete Harbor jobs from the pinned Terminal-Bench regression subset.
 
   mine DIAGNOSIS-SUMMARY.json [--reverifications RESULT.json,...] [--output PATH]
       Extract bounded, agent-visible weakness evidence from diagnosis results.
@@ -847,6 +851,32 @@ async function proposeBatch(args: ParsedArgs) {
   console.log(resultPath);
 }
 
+async function compareTerminalBench(args: ParsedArgs) {
+  const baselinePath = args.positional[0];
+  const candidatePath = args.positional[1];
+  if (!baselinePath || !candidatePath) {
+    throw new Error("terminal-bench-compare requires baseline and candidate Harbor job paths");
+  }
+  const rawLimit = flag(args, "max-cost-regression");
+  const limit = rawLimit === undefined ? 0.1 : Number(rawLimit);
+  if (!Number.isFinite(limit) || limit < 0) throw new Error("--max-cost-regression must be non-negative");
+  const report = compareTerminalBenchJobs(
+    await loadTerminalBenchJob(baselinePath),
+    await loadTerminalBenchJob(candidatePath),
+    limit,
+  );
+  const text = `${JSON.stringify(report, null, 2)}\n`;
+  const output = flag(args, "output");
+  if (output) {
+    const outputPath = resolve(output);
+    await writeFile(outputPath, text, { flag: "wx", mode: 0o600 });
+    console.log(outputPath);
+  } else {
+    process.stdout.write(text);
+  }
+  if (!report.passed) process.exitCode = 1;
+}
+
 async function main() {
   const command = process.argv[2];
   const args = parseArgs(process.argv.slice(3));
@@ -874,6 +904,9 @@ async function main() {
       break;
     case "compare":
       await compare(args);
+      break;
+    case "terminal-bench-compare":
+      await compareTerminalBench(args);
       break;
     case "mine":
       await mine(args);
