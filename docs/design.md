@@ -69,7 +69,7 @@ Remote dispatch to the Debian 13 host is a later orchestration layer; the same r
 
 Only diagnosis summaries can become proposal evidence. The miner copies aggregate correctness, cost, duration, tool counts, bounded agent-visible tool-error text, stop reason, and bounded final agent reports. It does not copy verifier commands, injected assets, or verifier output.
 
-A separate ephemeral Pi process receives that evidence plus structured prior rejections from `config/proposal-history.yaml`, with tools, resource discovery, context files, sessions, and project trust disabled. Its response is parsed as a declarative profile. Unknown fields, executable extensions, unsupported tools, mixed prompt/tool changes, oversized instructions, and direct diagnosis-task references are rejected. A generated profile remains an untrusted candidate requiring review and evaluation.
+A separate ephemeral Pi process receives that evidence plus structured prior rejections from `config/proposal-history.yaml`, with tools, resource discovery, context files, sessions, and project trust disabled. It can propose one profile or a batch of up to five distinct hypotheses in one call. Responses are parsed as declarative profiles. Unknown fields, executable extensions, unsupported tools, mixed prompt/tool changes, oversized instructions, and direct diagnosis-task references are rejected. A generated profile remains an untrusted candidate requiring review and evaluation.
 
 ## Experiments and promotion policy
 

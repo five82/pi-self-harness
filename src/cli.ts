@@ -10,16 +10,16 @@ import { compareSuiteRuns } from "./comparison.ts";
 import { buildExperimentPlan, experimentSummaryPaths, type ExperimentExecution, type ExperimentSummary } from "./experiment.ts";
 import { buildWeaknessEvidence, extractToolErrorEvidence, type ToolErrorEvidence, type WeaknessEvidence } from "./mining.ts";
 import {
-  buildProposalPiArgs,
+  buildBatchProposalPrompt,
   buildProposalPrompt,
   formatProfile,
   parseProposalHistory,
   parseProposedProfile,
+  parseProposedProfiles,
 } from "./proposal.ts";
-import { runProcess } from "./process.ts";
+import { runProposalModel } from "./proposal-runner.ts";
 import { evaluate } from "./runner.ts";
-import { summarizeTraceText } from "./trace.ts";
-import type { EvaluationResult, HarnessProfile } from "./types.ts";
+import type { EvaluationResult } from "./types.ts";
 import {
   summarizeSuite,
   suiteTaskResult,
@@ -115,6 +115,9 @@ Commands:
 
   propose EVIDENCE.json --id ID --model PROVIDER/MODEL --output PROFILE.yaml [--history PATH] [options]
       Ask a tool-free Pi process for one bounded declarative candidate profile.
+
+  propose-batch EVIDENCE.json --prefix ID --count N --model PROVIDER/MODEL --output-directory PATH [options]
+      Ask one tool-free Pi process for up to five distinct bounded candidates.
 
 Run options:
   --thinking LEVEL
@@ -467,85 +470,154 @@ async function mine(args: ParsedArgs) {
   }
 }
 
-async function propose(args: ParsedArgs) {
+async function loadProposalInputs(args: ParsedArgs) {
   const evidencePath = args.positional[0];
-  if (!evidencePath) throw new Error("propose requires a weakness evidence path");
-  const candidateId = requiredFlag(args, "id");
-  const model = requiredFlag(args, "model");
-  const outputPath = resolve(requiredFlag(args, "output"));
-  if (existsSync(outputPath)) throw new Error(`Output already exists: ${outputPath}`);
-  const evidenceText = await readFile(resolve(evidencePath), "utf8");
+  if (!evidencePath) throw new Error("proposal command requires a weakness evidence path");
+  const resolvedEvidencePath = resolve(evidencePath);
+  const evidenceText = await readFile(resolvedEvidencePath, "utf8");
   const evidence = JSON.parse(evidenceText) as WeaknessEvidence;
   if (evidence.version !== 1 || evidence.split !== "diagnosis" || !Array.isArray(evidence.tasks)) {
     throw new Error("Invalid weakness evidence document");
   }
-
-  const thinking = flag(args, "thinking") ?? evidence.thinking;
   const historyPath = resolve(flag(args, "history") ?? DEFAULT_PROPOSAL_HISTORY);
   const historyText = existsSync(historyPath) ? await readFile(historyPath, "utf8") : "version: 1\nrejections: []\n";
-  const history = parseProposalHistory(historyText).filter((rejection) => !rejection.model || rejection.model === evidence.model);
-  const startedAt = new Date().toISOString();
-  const runId = `${startedAt.replace(/[:.]/g, "-")}_${candidateId}`.replace(/[^A-Za-z0-9._-]+/g, "-");
-  const runDirectory = resolve(
-    flag(args, "runs-directory") ?? join(ROOT, ".runs"),
-    "proposals",
-    candidateId,
-    runId,
+  const history = parseProposalHistory(historyText).filter(
+    (rejection) => !rejection.model || rejection.model === evidence.model,
   );
-  await mkdir(runDirectory, { recursive: true });
-  const tracePath = join(runDirectory, "proposal.jsonl");
-  const stderrPath = join(runDirectory, "proposal.stderr.log");
-  const prompt = buildProposalPrompt(evidence, candidateId, history);
-  const piArgs = buildProposalPiArgs({ model, thinking, prompt });
+  return {
+    evidencePath: resolvedEvidencePath,
+    evidenceText,
+    evidence,
+    historyPath,
+    historyText,
+    history,
+    model: requiredFlag(args, "model"),
+    thinking: flag(args, "thinking") ?? evidence.thinking,
+  };
+}
 
-  const processResult = await runProcess({
-    command: flag(args, "pi-command") ?? "pi",
-    args: piArgs,
-    cwd: ROOT,
-    env: { ...process.env, PI_SKIP_VERSION_CHECK: "1", PI_TELEMETRY: "0" },
-    timeoutMs: positiveIntegerFlag(args, "proposal-timeout", 300) * 1_000,
-    stdoutPath: tracePath,
-    stderrPath,
+function assertProposalProcess(run: Awaited<ReturnType<typeof runProposalModel>>): void {
+  if (run.process.code !== 0 || run.process.timedOut) {
+    throw new Error(run.process.stderrTail || `Pi proposal process exited with code ${run.process.code}`);
+  }
+  if (!run.trace.finalText) throw new Error("Pi proposal process returned no final text");
+}
+
+async function propose(args: ParsedArgs) {
+  const input = await loadProposalInputs(args);
+  const candidateId = requiredFlag(args, "id");
+  const outputPath = resolve(requiredFlag(args, "output"));
+  if (existsSync(outputPath)) throw new Error(`Output already exists: ${outputPath}`);
+  const run = await runProposalModel({
+    root: ROOT,
+    runsDirectory: resolve(flag(args, "runs-directory") ?? join(ROOT, ".runs")),
+    artifactId: candidateId,
+    model: input.model,
+    thinking: input.thinking,
+    prompt: buildProposalPrompt(input.evidence, candidateId, input.history),
+    piCommand: flag(args, "pi-command"),
+    timeoutSeconds: positiveIntegerFlag(args, "proposal-timeout", 300),
   });
-  const trace = summarizeTraceText(processResult.stdoutTail);
+
   let error: string | undefined;
-  let profile: HarnessProfile | undefined;
+  let generated = false;
   try {
-    if (processResult.code !== 0 || processResult.timedOut) {
-      throw new Error(processResult.stderrTail || `Pi proposal process exited with code ${processResult.code}`);
-    }
-    if (!trace.finalText) throw new Error("Pi proposal process returned no final text");
-    profile = parseProposedProfile(trace.finalText, candidateId, evidence);
+    assertProposalProcess(run);
+    const profile = parseProposedProfile(run.trace.finalText!, candidateId, input.evidence);
     await mkdir(dirname(outputPath), { recursive: true });
     await writeFile(outputPath, formatProfile(profile), { flag: "wx", mode: 0o600 });
     loadProfile(outputPath);
+    generated = true;
   } catch (caught) {
     error = caught instanceof Error ? caught.message : String(caught);
   }
 
-  const proposalResult = {
+  const resultPath = join(run.runDirectory, "result.json");
+  await writeFile(resultPath, `${JSON.stringify({
     version: 1,
-    runId,
-    startedAt,
-    finishedAt: new Date().toISOString(),
-    evidencePath: resolve(evidencePath),
-    evidenceSha256: createHash("sha256").update(evidenceText).digest("hex"),
-    historyPath,
-    historySha256: createHash("sha256").update(historyText).digest("hex"),
-    targetModel: evidence.model,
-    proposalModel: model,
-    thinking,
+    runId: run.runId,
+    startedAt: run.startedAt,
+    finishedAt: run.finishedAt,
+    evidencePath: input.evidencePath,
+    evidenceSha256: createHash("sha256").update(input.evidenceText).digest("hex"),
+    historyPath: input.historyPath,
+    historySha256: createHash("sha256").update(input.historyText).digest("hex"),
+    targetModel: input.evidence.model,
+    proposalModel: input.model,
+    thinking: input.thinking,
     outputPath,
-    generated: Boolean(profile),
+    generated,
     error,
-    tracePath,
-    process: { ...processResult, stdoutTail: "" },
-    trace,
-  };
-  const resultPath = join(runDirectory, "result.json");
-  await writeFile(resultPath, `${JSON.stringify(proposalResult, null, 2)}\n`, { mode: 0o600 });
+    tracePath: run.tracePath,
+    process: { ...run.process, stdoutTail: "" },
+    trace: run.trace,
+  }, null, 2)}\n`, { mode: 0o600 });
   if (error) throw new Error(`${error}\n${resultPath}`);
   console.log(outputPath);
+  console.log(resultPath);
+}
+
+async function proposeBatch(args: ParsedArgs) {
+  const input = await loadProposalInputs(args);
+  const prefix = requiredFlag(args, "prefix");
+  const count = positiveIntegerFlag(args, "count", 3);
+  if (count > 5) throw new Error("--count cannot exceed 5");
+  const candidateIds = Array.from({ length: count }, (_, index) => `${prefix}-${index + 1}`);
+  const outputDirectory = resolve(requiredFlag(args, "output-directory"));
+  const outputPaths = candidateIds.map((id) => join(outputDirectory, `${id}.yaml`));
+  for (const outputPath of outputPaths) {
+    if (existsSync(outputPath)) throw new Error(`Output already exists: ${outputPath}`);
+  }
+  const artifactId = `${prefix}-batch`;
+  const run = await runProposalModel({
+    root: ROOT,
+    runsDirectory: resolve(flag(args, "runs-directory") ?? join(ROOT, ".runs")),
+    artifactId,
+    model: input.model,
+    thinking: input.thinking,
+    prompt: buildBatchProposalPrompt(input.evidence, candidateIds, input.history),
+    piCommand: flag(args, "pi-command"),
+    timeoutSeconds: positiveIntegerFlag(args, "proposal-timeout", 300),
+  });
+
+  let error: string | undefined;
+  const generatedPaths: string[] = [];
+  try {
+    assertProposalProcess(run);
+    const profiles = parseProposedProfiles(run.trace.finalText!, candidateIds, input.evidence);
+    await mkdir(outputDirectory, { recursive: true });
+    for (const profile of profiles) {
+      const outputPath = join(outputDirectory, `${profile.id}.yaml`);
+      await writeFile(outputPath, formatProfile(profile), { flag: "wx", mode: 0o600 });
+      loadProfile(outputPath);
+      generatedPaths.push(outputPath);
+    }
+  } catch (caught) {
+    error = caught instanceof Error ? caught.message : String(caught);
+  }
+
+  const resultPath = join(run.runDirectory, "result.json");
+  await writeFile(resultPath, `${JSON.stringify({
+    version: 1,
+    runId: run.runId,
+    startedAt: run.startedAt,
+    finishedAt: run.finishedAt,
+    evidencePath: input.evidencePath,
+    evidenceSha256: createHash("sha256").update(input.evidenceText).digest("hex"),
+    historyPath: input.historyPath,
+    historySha256: createHash("sha256").update(input.historyText).digest("hex"),
+    targetModel: input.evidence.model,
+    proposalModel: input.model,
+    thinking: input.thinking,
+    requestedCandidates: count,
+    generatedPaths,
+    error,
+    tracePath: run.tracePath,
+    process: { ...run.process, stdoutTail: "" },
+    trace: run.trace,
+  }, null, 2)}\n`, { mode: 0o600 });
+  if (error) throw new Error(`${error}\n${resultPath}`);
+  for (const outputPath of generatedPaths) console.log(outputPath);
   console.log(resultPath);
 }
 
@@ -576,6 +648,9 @@ async function main() {
       break;
     case "propose":
       await propose(args);
+      break;
+    case "propose-batch":
+      await proposeBatch(args);
       break;
     case "help":
     case "--help":

@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
 import type { WeaknessEvidence } from "../src/mining.ts";
 import {
+  buildBatchProposalPrompt,
   buildProposalPiArgs,
   buildProposalPrompt,
   formatProfile,
   parseProposalHistory,
   parseProposedProfile,
+  parseProposedProfiles,
 } from "../src/proposal.ts";
 
 const evidence: WeaknessEvidence = {
@@ -76,6 +78,30 @@ describe("bounded profile proposals", () => {
         evidence,
       ),
     ).toThrow("mentions diagnosis task");
+  });
+
+  it("parses distinct bounded batch proposals", () => {
+    const ids = ["candidate-1", "candidate-2"];
+    const prompt = buildBatchProposalPrompt(evidence, ids);
+    const profiles = parseProposedProfiles(
+      JSON.stringify([
+        { id: ids[0], description: "Stop redundant retries", systemPromptAppend: "Inspect an error before retrying." },
+        { id: ids[1], description: "Use fewer tools", tools: ["read", "bash", "edit"] },
+      ]),
+      ids,
+      evidence,
+    );
+
+    expect(prompt).toContain('"candidate-2"');
+    expect(profiles.map((profile) => profile.id)).toEqual(ids);
+  });
+
+  it("rejects duplicate batch hypotheses", () => {
+    const text = JSON.stringify([
+      { id: "candidate-1", description: "One", systemPromptAppend: "Same instruction." },
+      { id: "candidate-2", description: "Two", systemPromptAppend: "Same instruction." },
+    ]);
+    expect(() => parseProposedProfiles(text, ["candidate-1", "candidate-2"], evidence)).toThrow("duplicate hypotheses");
   });
 
   it("includes structured rejected hypotheses in the proposal prompt", () => {

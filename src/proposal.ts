@@ -99,12 +99,50 @@ Diagnosis evidence:
 ${JSON.stringify(evidence, null, 2)}`;
 }
 
-function extractObject(text: string): Record<string, unknown> {
+export function buildBatchProposalPrompt(
+  evidence: WeaknessEvidence,
+  candidateIds: string[],
+  priorRejections: ProposalRejection[] = [],
+): string {
+  if (!candidateIds.length || candidateIds.length > 5) throw new Error("Batch proposal requires one to five candidate ids");
+  for (const candidateId of candidateIds) assertCandidateId(candidateId);
+  if (new Set(candidateIds).size !== candidateIds.length) throw new Error("Batch candidate ids must be unique");
+  return `Design up to ${candidateIds.length} distinct bounded candidate profiles for the coding model represented by this diagnosis evidence.
+
+Return exactly one JSON array, with no Markdown or commentary. Each item must use one available id and this schema:
+{"id":"${candidateIds[0]}","description":"...","systemPromptAppend":"..."}
+
+Available ids: ${JSON.stringify(candidateIds)}
+
+Each item may instead propose a non-empty "tools" allowlist using only read, bash, edit, write. Each candidate must change either one appended instruction or the tool allowlist, never both. Omit unchanged fields. Return fewer items, including an empty array, when the evidence does not support enough distinct hypotheses.
+
+Rules:
+- Every candidate must represent one distinct, short, testable, model-specific hypothesis.
+- Generalize across coding work. Do not mention task IDs, repository names, files, hidden tests, or expected solutions.
+- Do not weaken validation, safety, isolation, permissions, or repository instructions.
+- Do not add executable code, extensions, credentials, evaluator changes, or new capabilities.
+- Avoid broad process advice already present in normal coding-agent prompts.
+- Do not repeat a previously rejected hypothesis or another item in this batch.
+- Keep each systemPromptAppend under ${MAX_SYSTEM_APPEND} characters.
+
+Previously rejected hypotheses:
+${JSON.stringify(priorRejections, null, 2)}
+
+Diagnosis evidence:
+${JSON.stringify(evidence, null, 2)}`;
+}
+
+function extractJson(text: string, opening: "{" | "["): unknown {
   const trimmed = text.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
-  const start = trimmed.indexOf("{");
-  const end = trimmed.lastIndexOf("}");
-  if (start < 0 || end < start) throw new Error("Proposal response did not contain a JSON object");
-  const value = JSON.parse(trimmed.slice(start, end + 1));
+  const closing = opening === "{" ? "}" : "]";
+  const start = trimmed.indexOf(opening);
+  const end = trimmed.lastIndexOf(closing);
+  if (start < 0 || end < start) throw new Error(`Proposal response did not contain a JSON ${opening === "{" ? "object" : "array"}`);
+  return JSON.parse(trimmed.slice(start, end + 1));
+}
+
+function extractObject(text: string): Record<string, unknown> {
+  const value = extractJson(text, "{");
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Proposal must be a JSON object");
   return value as Record<string, unknown>;
 }
@@ -145,6 +183,31 @@ export function parseProposedProfile(text: string, candidateId: string, evidence
   }
 
   return { version: 1, id: candidateId, description, systemPromptAppend, tools };
+}
+
+export function parseProposedProfiles(
+  text: string,
+  candidateIds: string[],
+  evidence: WeaknessEvidence,
+): HarnessProfile[] {
+  const value = extractJson(text, "[");
+  if (!Array.isArray(value)) throw new Error("Batch proposal must be a JSON array");
+  if (value.length > candidateIds.length) throw new Error("Batch proposal returned too many candidates");
+  const allowedIds = new Set(candidateIds);
+  const profiles = value.map((item) => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) throw new Error("Batch candidate must be an object");
+    const id = (item as Record<string, unknown>).id;
+    if (typeof id !== "string" || !allowedIds.has(id)) throw new Error(`Batch proposal returned unsupported id ${String(id)}`);
+    return parseProposedProfile(JSON.stringify(item), id, evidence);
+  });
+  if (!profiles.length) throw new Error("Batch proposal declined because evidence was insufficient");
+  if (new Set(profiles.map((profile) => profile.id)).size !== profiles.length) throw new Error("Batch proposal returned duplicate ids");
+  const signatures = profiles.map((profile) => JSON.stringify({
+    systemPromptAppend: profile.systemPromptAppend,
+    tools: profile.tools,
+  }));
+  if (new Set(signatures).size !== signatures.length) throw new Error("Batch proposal returned duplicate hypotheses");
+  return profiles;
 }
 
 export function formatProfile(profile: HarnessProfile): string {

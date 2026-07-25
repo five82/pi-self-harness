@@ -17,7 +17,7 @@ Foundation only:
 - full Pi JSON trace plus compact turns/tools/errors/tokens/cost summary
 - manifest validation, bounded diagnosis-evidence mining, tool-free declarative proposal generation, repeated suite execution, and matched profile comparison
 
-Not implemented yet: remote Debian dispatch, hardened macOS isolation, multi-candidate search, confidence-aware promotion gates, automatic profile installation, or Terminal-Bench integration.
+Not implemented yet: remote Debian dispatch, hardened macOS isolation, automated candidate screening/ranking, confidence-aware promotion gates, automatic profile installation, or Terminal-Bench integration.
 
 ## Setup
 
@@ -98,9 +98,15 @@ npm run cli -- propose evidence.json \
   --model provider/proposal-model \
   --thinking high \
   --output profiles/candidate-one.yaml
+
+npm run cli -- propose-batch evidence.json \
+  --prefix candidate \
+  --count 3 \
+  --model provider/proposal-model \
+  --output-directory profiles
 ```
 
-The proposer is a separate ephemeral Pi process with no tools, resources, context files, or project trust. It also receives structured rejected hypotheses from [`config/proposal-history.yaml`](config/proposal-history.yaml) to discourage repeating known regressions. Its output must pass the profile schema and may contain only one appended instruction or a subset of the four container-routed tools. Generated profiles are never installed or promoted automatically; review one before evaluation.
+Batch proposal uses one model call and may conservatively return fewer candidates. The proposer is a separate ephemeral Pi process with no tools, resources, context files, or project trust. It also receives structured rejected hypotheses from [`config/proposal-history.yaml`](config/proposal-history.yaml) to discourage repeating known regressions. Its output must pass the profile schema and may contain only one appended instruction or a subset of the four container-routed tools. Generated profiles are never installed or promoted automatically; review one before evaluation.
 
 ## Evaluation strategy
 

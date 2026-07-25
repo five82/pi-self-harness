@@ -48,9 +48,16 @@ export async function runProcess(options: RunProcessOptions): Promise<ProcessRes
     let timedOut = false;
     let settled = false;
 
-    const finishStreams = () => {
-      stdoutFile?.end();
-      stderrFile?.end();
+    const finishStreams = async () => {
+      await Promise.all(
+        [stdoutFile, stderrFile].map(
+          (stream) =>
+            new Promise<void>((done) => {
+              if (stream) stream.end(done);
+              else done();
+            }),
+        ),
+      );
     };
 
     const killTree = () => {
@@ -90,25 +97,25 @@ export async function runProcess(options: RunProcessOptions): Promise<ProcessRes
       if (settled) return;
       settled = true;
       clearTimeout(timer);
-      finishStreams();
-      reject(error);
+      void finishStreams().then(() => reject(error));
     });
 
     child.on("close", (code, signal) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
-      finishStreams();
-      resolve({
-        command: options.command,
-        args,
-        code,
-        signal,
-        timedOut,
-        durationMs: Date.now() - started,
-        stdoutTail,
-        stderrTail,
-      });
+      void finishStreams().then(() =>
+        resolve({
+          command: options.command,
+          args,
+          code,
+          signal,
+          timedOut,
+          durationMs: Date.now() - started,
+          stdoutTail,
+          stderrTail,
+        }),
+      );
     });
   });
 }

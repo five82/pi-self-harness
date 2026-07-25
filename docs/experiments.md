@@ -22,6 +22,10 @@ One GPT-5.6 Sol/high-thinking baseline pass established the expanded corpus:
 
 This single sample is a smoke baseline, not promotion evidence. The locked ProjectGM task was historically verified against its base and fix revisions but was intentionally not evaluated before a candidate is frozen.
 
+## 2026-07-25: expanded diagnosis baseline and batch proposal
+
+The three-task diagnosis split completed three baseline trials: 9/9 passed, with $4.3672 reported cost, 226 tool calls, and 17 tool errors. A single tool-free batch proposal call then produced three distinct hypotheses targeting validation-wrapper bootstrapping, duplicate package-script flags, and ad hoc import probes. The batch mechanism was validated, but no candidate was retained or evaluated pending a bounded screening workflow.
+
 ## 2026-07-24: generated reactive validation-stop candidate
 
 After three baseline diagnosis trials, the bounded proposer generated a reactive instruction: once validation fails solely because it tries to download tooling, do not retry or probe alternative installers, but continue distinct checks using available tools.
@@ -43,3 +47,4 @@ The tool-free proposer received the one-trial diagnosis snapshot and declined to
 - The first `reel-swap-growth-pressure` baseline attempt produced a correct patch, but the hidden verifier rejected its valid choice to retain the two-argument helper signature with an unnamed swap parameter. The verifier now behaviorally covers both historical and compatible signatures. It fails at the base revision, passes at the historical fix, and passes the rejected run's patch. A fresh baseline run passed.
 - The first `infra-stable-release-discovery` attempt exposed a container-name truncation bug: a long run ID was sliced to a name beginning with `-`, which Docker rejected. Container names now keep a `psh-` prefix and include a stable hash within the length limit.
 - Two subsequent Infra attempts produced semantically valid alternatives that exposed underspecified helper names and verifier assumptions about normalized versus raw npm metadata. The task now states its public API and the verifier accepts both command-side extraction and in-helper JSON parsing. It still fails at the base revision, passes at the historical fix, and a fresh baseline run passed.
+- The first expanded batch proposal completed at the provider but was reported as empty because its large JSON event exceeded the process tail buffer. Process output streams are now flushed before return and proposal traces are summarized from the complete JSONL artifact; the rerun generated three valid candidates.
