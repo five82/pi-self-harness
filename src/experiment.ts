@@ -28,7 +28,8 @@ export interface ExperimentSummary {
   trials: number;
   startedAt: string;
   finishedAt?: string;
-  status: "running" | "completed";
+  status: "running" | "completed" | "invalid";
+  invalidReason?: string;
   baselineProfileId: string;
   baselineProfileSha256: string;
   candidateProfileId: string;

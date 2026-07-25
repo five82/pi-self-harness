@@ -8,6 +8,7 @@ import { dirname, extname, join, resolve } from "node:path";
 import { loadProfile, loadRepositoryConfig, loadSuite, loadTask } from "./config.ts";
 import { compareSuiteRuns } from "./comparison.ts";
 import { buildExperimentPlan, experimentSummaryPaths, type ExperimentExecution, type ExperimentSummary } from "./experiment.ts";
+import { evaluatorInfrastructureFailure } from "./infrastructure.ts";
 import { buildWeaknessEvidence, extractToolErrorEvidence, type ToolErrorEvidence, type WeaknessEvidence } from "./mining.ts";
 import {
   buildBatchProposalPrompt,
@@ -19,7 +20,14 @@ import {
 } from "./proposal.ts";
 import { runProposalModel } from "./proposal-runner.ts";
 import { evaluate } from "./runner.ts";
-import type { EvaluationResult } from "./types.ts";
+import {
+  buildScreeningPlan,
+  rankScreeningComparisons,
+  screeningSummaryPaths,
+  type ScreeningExecution,
+  type ScreeningSummary,
+} from "./screening.ts";
+import type { EvaluationResult, HarnessProfile } from "./types.ts";
 import {
   summarizeSuite,
   suiteTaskResult,
@@ -107,6 +115,9 @@ Commands:
   experiment SUITE.yaml --split SPLIT --baseline PROFILE.yaml --candidate PROFILE.yaml --model PROVIDER/MODEL [options]
       Run an interleaved repeated baseline/candidate experiment and compare it.
 
+  screen SUITE.yaml --baseline PROFILE.yaml --candidates PROFILE1.yaml,PROFILE2.yaml --model PROVIDER/MODEL [options]
+      Run one diagnosis trial with a shared baseline and rank up to five candidates.
+
   compare BASELINE-SUMMARY.json CANDIDATE-SUMMARY.json [--minimum-trials N] [--output PATH]
       Compare paired suite runs and produce a bounded promotion recommendation.
 
@@ -124,6 +135,7 @@ Run options:
   --pi-command PATH
   --runs-directory PATH
   --trials N                 Suite default 1; experiment default 3.
+  --retain N                 Screening finalists; default 1.
   --proposal-timeout SECONDS Proposal timeout; default 300.
   --keep-worktree
   --allow-unsandboxed-agent   Required acknowledgement for local (non-container) tasks.
@@ -248,6 +260,7 @@ async function runSuite(args: ParsedArgs) {
   const taskResults: SuiteTaskResult[] = [];
   for (let trial = 1; trial <= trials; trial++) {
     for (const taskId of taskIds) {
+      let invalidReason: string | undefined;
       const task = tasksById.get(taskId);
       if (!task) throw new Error(`Unknown task ${taskId}`);
       const repository = repositoriesById.get(task.repository);
@@ -257,6 +270,7 @@ async function runSuite(args: ParsedArgs) {
       try {
         const evaluation = await evaluate({ task, repository, profile, model, ...options });
         const taskResult = suiteTaskResult(evaluation.result, evaluation.resultPath, trial);
+        invalidReason = evaluatorInfrastructureFailure(evaluation.result);
         taskResults.push(taskResult);
         console.log(`${taskResult.passed ? "PASS" : "FAIL"} ${taskId} profile=${profile.id} trial=${trial}`);
       } catch (error) {
@@ -269,18 +283,24 @@ async function runSuite(args: ParsedArgs) {
         console.log(`ERROR ${taskId} profile=${profile.id} trial=${trial}`);
       }
 
-      const partial = summarizeSuite({
-        suite,
-        split,
-        profileId: profile.id,
-        model,
-        thinking: options.thinking,
-        startedAt,
-        finishedAt: new Date().toISOString(),
-        trials,
-        tasks: taskResults,
-      });
+      const partial = {
+        ...summarizeSuite({
+          suite,
+          split,
+          profileId: profile.id,
+          model,
+          thinking: options.thinking,
+          startedAt,
+          finishedAt: new Date().toISOString(),
+          trials,
+          tasks: taskResults,
+        }),
+        invalidReason,
+      };
       await writeFile(summaryPath, `${JSON.stringify(partial, null, 2)}\n`, { mode: 0o600 });
+      if (invalidReason) {
+        throw new Error(`Suite invalid because evaluator infrastructure failed: ${invalidReason}\n${summaryPath}`);
+      }
     }
   }
 
@@ -362,7 +382,11 @@ async function runExperiment(args: ParsedArgs) {
     trials,
     tasks: profileTasks[role],
   });
-  const writeProgress = async (status: ExperimentSummary["status"], comparison?: ReturnType<typeof compareSuiteRuns>) => {
+  const writeProgress = async (
+    status: ExperimentSummary["status"],
+    comparison?: ReturnType<typeof compareSuiteRuns>,
+    invalidReason?: string,
+  ) => {
     const baselineSummary = profileSummary("baseline");
     const candidateSummary = profileSummary("candidate");
     await writeFile(paths.baseline, `${JSON.stringify(baselineSummary, null, 2)}\n`, { mode: 0o600 });
@@ -376,8 +400,9 @@ async function runExperiment(args: ParsedArgs) {
       thinking: options.thinking,
       trials,
       startedAt,
-      finishedAt: status === "completed" ? new Date().toISOString() : undefined,
+      finishedAt: status === "running" ? undefined : new Date().toISOString(),
       status,
+      invalidReason,
       baselineProfileId: baseline.id,
       baselineProfileSha256: profileHashes.baseline,
       candidateProfileId: candidate.id,
@@ -396,9 +421,11 @@ async function runExperiment(args: ParsedArgs) {
     const repository = repositoriesById.get(task.repository)!;
     const profile = profileByRole[step.profile];
     let taskResult: SuiteTaskResult;
+    let invalidReason: string | undefined;
     try {
       const evaluation = await evaluate({ task, repository, profile, model, ...options });
       taskResult = suiteTaskResult(evaluation.result, evaluation.resultPath, step.trial);
+      invalidReason = evaluatorInfrastructureFailure(evaluation.result);
     } catch (error) {
       taskResult = {
         taskId: task.id,
@@ -418,6 +445,10 @@ async function runExperiment(args: ParsedArgs) {
     console.log(
       `${taskResult.passed ? "PASS" : "FAIL"} ${task.id} profile=${profile.id} trial=${step.trial} sequence=${step.sequence}`,
     );
+    if (invalidReason) {
+      await writeProgress("invalid", undefined, invalidReason);
+      throw new Error(`Experiment invalid because evaluator infrastructure failed: ${invalidReason}\n${paths.experiment}`);
+    }
     await writeProgress("running");
   }
 
@@ -427,6 +458,167 @@ async function runExperiment(args: ParsedArgs) {
   console.log(`${comparison.recommendation}: cost delta=${((comparison.delta.costFraction ?? 0) * 100).toFixed(1)}%`);
   console.log(paths.experiment);
   if (comparison.recommendation === "reject") process.exitCode = 1;
+}
+
+async function runScreening(args: ParsedArgs) {
+  const suitePath = args.positional[0];
+  if (!suitePath) throw new Error("screen requires a suite manifest path");
+  const baselinePath = resolve(requiredFlag(args, "baseline"));
+  const candidatePaths = requiredFlag(args, "candidates").split(",").map((path) => path.trim()).filter(Boolean).map((path) => resolve(path));
+  if (!candidatePaths.length || candidatePaths.length > 5) throw new Error("--candidates requires one to five profile paths");
+  const retain = positiveIntegerFlag(args, "retain", 1);
+  if (retain > candidatePaths.length) throw new Error("--retain cannot exceed the candidate count");
+  const baseline = loadProfile(baselinePath);
+  const candidates = candidatePaths.map((path) => loadProfile(path));
+  const profiles: HarnessProfile[] = [baseline, ...candidates];
+  if (new Set(profiles.map((profile) => profile.id)).size !== profiles.length) {
+    throw new Error("Screening profile ids must be unique");
+  }
+  const model = requiredFlag(args, "model");
+  const suite = loadSuite(resolve(suitePath));
+  const split = "diagnosis" as const;
+  const taskIds = taskIdsForSplit(suite, split);
+  if (!taskIds.length) throw new Error(`Suite ${suite.id} has no tasks in its diagnosis split`);
+  const plan = buildScreeningPlan(taskIds, profiles.map((profile) => profile.id));
+
+  const tasksById = new Map(yamlFiles(join(ROOT, "tasks")).map((path) => {
+    const task = loadTask(path);
+    return [task.id, task] as const;
+  }));
+  const repositories = loadRepositoryConfig(repositoriesPath(args)).repositories;
+  const repositoriesById = new Map(repositories.map((repository) => [repository.id, repository]));
+  for (const taskId of taskIds) {
+    const task = tasksById.get(taskId);
+    if (!task) throw new Error(`Unknown task ${taskId}`);
+    const repository = repositoriesById.get(task.repository);
+    if (!repository) throw new Error(`Unknown repository ${task.repository}`);
+    if (!existsSync(repository.path)) throw new Error(`Repository path does not exist: ${repository.path}`);
+  }
+
+  const profileById = new Map(profiles.map((profile) => [profile.id, profile]));
+  const profilePathById = new Map([
+    [baseline.id, baselinePath],
+    ...candidates.map((candidate, index) => [candidate.id, candidatePaths[index]] as const),
+  ]);
+  const profileHashes = new Map<string, string>();
+  for (const profile of profiles) {
+    profileHashes.set(profile.id, createHash("sha256").update(await readFile(profilePathById.get(profile.id)!)).digest("hex"));
+  }
+  const options = evaluationOptions(args);
+  const startedAt = new Date().toISOString();
+  const fingerprint = createHash("sha256").update([...profileHashes.values()].join(":"), "utf8").digest("hex").slice(0, 10);
+  const runId = `${startedAt.replace(/[:.]/g, "-")}_${suite.id}_diagnosis_screen_${fingerprint}`.replace(
+    /[^A-Za-z0-9._-]+/g,
+    "-",
+  );
+  const directory = join(options.runsDirectory, "screenings", suite.id, runId);
+  const paths = screeningSummaryPaths(directory, candidates.map((candidate) => candidate.id));
+  await mkdir(directory, { recursive: true });
+  const profileTasks = new Map(profiles.map((profile) => [profile.id, [] as SuiteTaskResult[]]));
+  const executions: ScreeningExecution[] = [];
+
+  const profileSummary = (profile: HarnessProfile) => summarizeSuite({
+    suite,
+    split,
+    profileId: profile.id,
+    model,
+    thinking: options.thinking,
+    startedAt,
+    finishedAt: new Date().toISOString(),
+    trials: 1,
+    tasks: profileTasks.get(profile.id)!,
+  });
+  const candidateMetadata = candidates.map((candidate) => ({
+    id: candidate.id,
+    sha256: profileHashes.get(candidate.id)!,
+    summaryPath: paths.candidates.get(candidate.id)!.summary,
+    comparisonPath: paths.candidates.get(candidate.id)!.comparison,
+  }));
+  const writeProgress = async (
+    status: ScreeningSummary["status"],
+    ranking?: ReturnType<typeof rankScreeningComparisons>,
+    invalidReason?: string,
+  ) => {
+    await writeFile(paths.baseline, `${JSON.stringify(profileSummary(baseline), null, 2)}\n`, { mode: 0o600 });
+    for (const candidate of candidates) {
+      await writeFile(
+        paths.candidates.get(candidate.id)!.summary,
+        `${JSON.stringify(profileSummary(candidate), null, 2)}\n`,
+        { mode: 0o600 },
+      );
+    }
+    const summary: ScreeningSummary = {
+      version: 1,
+      screeningOnly: true,
+      runId,
+      suiteId: suite.id,
+      split,
+      model,
+      thinking: options.thinking,
+      startedAt,
+      finishedAt: status === "running" ? undefined : new Date().toISOString(),
+      status,
+      invalidReason,
+      baselineProfileId: baseline.id,
+      baselineProfileSha256: profileHashes.get(baseline.id)!,
+      baselineSummaryPath: paths.baseline,
+      candidateProfiles: candidateMetadata,
+      executions,
+      ranking,
+    };
+    await writeFile(paths.screening, `${JSON.stringify(summary, null, 2)}\n`, { mode: 0o600 });
+  };
+
+  for (const step of plan) {
+    const task = tasksById.get(step.taskId)!;
+    const repository = repositoriesById.get(task.repository)!;
+    const profile = profileById.get(step.profileId)!;
+    let taskResult: SuiteTaskResult;
+    let invalidReason: string | undefined;
+    try {
+      const evaluation = await evaluate({ task, repository, profile, model, ...options });
+      taskResult = suiteTaskResult(evaluation.result, evaluation.resultPath, 1);
+      invalidReason = evaluatorInfrastructureFailure(evaluation.result);
+    } catch (error) {
+      taskResult = {
+        taskId: task.id,
+        trial: 1,
+        passed: false,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+    profileTasks.get(profile.id)!.push(taskResult);
+    executions.push({
+      ...step,
+      passed: taskResult.passed,
+      resultPath: taskResult.resultPath,
+      error: taskResult.error,
+    });
+    console.log(`${taskResult.passed ? "PASS" : "FAIL"} ${task.id} profile=${profile.id} sequence=${step.sequence}`);
+    if (invalidReason) {
+      await writeProgress("invalid", undefined, invalidReason);
+      throw new Error(`Screening invalid because evaluator infrastructure failed: ${invalidReason}\n${paths.screening}`);
+    }
+    await writeProgress("running");
+  }
+
+  const comparisons = candidates.map((candidate) => {
+    const candidatePaths = paths.candidates.get(candidate.id)!;
+    const comparison = compareSuiteRuns(profileSummary(baseline), profileSummary(candidate), 3);
+    return { comparisonPath: candidatePaths.comparison, comparison };
+  });
+  for (const entry of comparisons) {
+    await writeFile(entry.comparisonPath, `${JSON.stringify(entry.comparison, null, 2)}\n`, { mode: 0o600 });
+  }
+  const ranking = rankScreeningComparisons(comparisons, retain);
+  await writeProgress("completed", ranking);
+  for (const entry of ranking) {
+    console.log(
+      `#${entry.rank} ${entry.candidateProfileId}: ${entry.disposition}; cost delta=${((entry.comparison.delta.costFraction ?? 0) * 100).toFixed(1)}%`,
+    );
+  }
+  console.log(paths.screening);
+  if (!ranking.some((entry) => entry.disposition === "retain-for-full-experiment")) process.exitCode = 1;
 }
 
 async function compare(args: ParsedArgs) {
@@ -639,6 +831,9 @@ async function main() {
       break;
     case "experiment":
       await runExperiment(args);
+      break;
+    case "screen":
+      await runScreening(args);
       break;
     case "compare":
       await compare(args);

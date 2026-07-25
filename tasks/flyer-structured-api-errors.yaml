@@ -1,0 +1,24 @@
+version: 1
+id: flyer-structured-api-errors
+repository: flyer
+summary: Preserve bounded structured API errors for operator diagnostics.
+baseRevision: 8ee85b65cbd38d4856818e19328d90b34b0ed44c
+prompt: |
+  Flyer's Spindle client currently discards response bodies for HTTP error statuses, hiding the daemon's useful JSON diagnostics. When an error response contains a non-empty string in its `error` field, include that trimmed message alongside the request path and status code. Malformed, empty, or non-JSON bodies must retain the existing status-only fallback. Bound how much error-body data the client reads so an untrusted daemon cannot force unbounded buffering. Add focused tests and keep the change inside API error handling.
+agentTimeoutSeconds: 900
+executor:
+  type: container
+  os: linux
+  image: pi-self-harness/go126:bookworm
+  setupNetwork: bridge
+  agentNetwork: none
+setup:
+  command: go mod download
+  timeoutSeconds: 900
+verification:
+  command: go test ./...
+  timeoutSeconds: 900
+  inject:
+    - source: verifiers/flyer-structured-api-errors_test.go
+      destination: internal/spindle/self_harness_structured_api_errors_test.go
+tags: [go, bugfix, api, safety]

@@ -73,7 +73,9 @@ A separate ephemeral Pi process receives that evidence plus structured prior rej
 
 ## Experiments and promotion policy
 
-Baseline and candidate trials should be run through the interleaved experiment command. For each task/trial pair it alternates which profile runs first, reducing order and transient-provider effects. Experiment artifacts fingerprint both profile files and retain exact execution order. Comparison reports deterministic 95% paired-bootstrap intervals for per-pair cost, duration, and tool-error changes. Until the corpus is larger, fixed correctness and efficiency thresholds remain the promotion gates and intervals are supporting uncertainty evidence.
+Up to five reviewed candidates can first pass through a bounded diagnosis-only screen. It runs one shared baseline and one trial per candidate, rotating execution order by task. Candidates with correctness or efficiency-guardrail regressions are dropped; remaining candidates need a measured improvement signal and are ranked by correctness, tool errors, cost, and duration. Screening artifacts fingerprint every profile and are marked `screeningOnly`; retention means only that a candidate may enter a full experiment. Suite, screening, and experiment orchestration abort on detected container-runtime failures so infrastructure outages cannot become candidate scores.
+
+Baseline and finalist trials should be run through the interleaved experiment command. For each task/trial pair it alternates which profile runs first, reducing order and transient-provider effects. Experiment artifacts fingerprint both profile files and retain exact execution order. Comparison reports deterministic 95% paired-bootstrap intervals for per-pair cost, duration, and tool-error changes. Until the corpus is larger, fixed correctness and efficiency thresholds remain the promotion gates and intervals are supporting uncertainty evidence.
 
 A candidate should be promoted only when:
 

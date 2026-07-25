@@ -15,9 +15,9 @@ Foundation only:
 - host-side Pi/model credentials with container-routed read/write/edit/bash tools
 - hidden verifier files injected only after the agent exits
 - full Pi JSON trace plus compact turns/tools/errors/tokens/cost summary
-- manifest validation, bounded diagnosis-evidence mining, tool-free declarative proposal generation, repeated suite execution, and matched profile comparison
+- manifest validation, bounded diagnosis-evidence mining, tool-free declarative proposal generation, shared-baseline candidate screening, repeated suite execution, and matched profile comparison
 
-Not implemented yet: remote Debian dispatch, hardened macOS isolation, automated candidate screening/ranking, confidence-aware promotion gates, automatic profile installation, or Terminal-Bench integration.
+Not implemented yet: remote Debian dispatch, hardened macOS isolation, confidence-aware promotion gates, automatic profile installation, or Terminal-Bench integration.
 
 ## Setup
 
@@ -107,6 +107,19 @@ npm run cli -- propose-batch evidence.json \
 ```
 
 Batch proposal uses one model call and may conservatively return fewer candidates. The proposer is a separate ephemeral Pi process with no tools, resources, context files, or project trust. It also receives structured rejected hypotheses from [`config/proposal-history.yaml`](config/proposal-history.yaml) to discourage repeating known regressions. Its output must pass the profile schema and may contain only one appended instruction or a subset of the four container-routed tools. Generated profiles are never installed or promoted automatically; review one before evaluation.
+
+Screen up to five reviewed candidates with one shared baseline trial:
+
+```bash
+npm run cli -- screen suites/personal.yaml \
+  --baseline profiles/baseline.yaml \
+  --candidates profiles/candidate-1.yaml,profiles/candidate-2.yaml \
+  --model provider/model \
+  --thinking high \
+  --retain 1
+```
+
+Screening runs only the diagnosis split, rotates profile order across tasks, fingerprints every profile, and ranks candidates using correctness followed by tool errors, cost, and duration. A candidate must avoid the comparison guardrails and show a measured improvement signal to be retained. Screening is explicitly preliminary: retained candidates still require the full interleaved three-trial experiment before validation.
 
 ## Evaluation strategy
 

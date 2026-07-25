@@ -29,6 +29,7 @@ export interface SuiteRunSummary {
   totalTasks: number;
   trials: number;
   totalCost: number;
+  invalidReason?: string;
   tasks: SuiteTaskResult[];
 }
 

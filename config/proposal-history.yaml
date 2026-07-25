@@ -8,3 +8,15 @@ rejections:
     model: openai-codex/gpt-5.6-sol
     hypothesis: After a download-related validation failure, stop retrying or probing alternatives while continuing distinct checks that use available tooling.
     reason: Across three paired diagnosis trials, correctness was unchanged and tool errors fell by one, but reported cost increased 7.5%, exceeding the 5% efficiency guardrail; the candidate was rejected before validation.
+  - id: gpt-5.6-sol-expanded-1
+    model: openai-codex/gpt-5.6-sol
+    hypothesis: Inspect validation wrappers for unconditional installation or updates and use documented no-install modes before running locally executable checks.
+    reason: In shared-baseline screening, correctness and two tool errors improved or held, but cost increased 34.1%, duration increased 12.1%, and tool calls increased by 12; the candidate failed efficiency guardrails.
+  - id: gpt-5.6-sol-expanded-2
+    model: openai-codex/gpt-5.6-sol
+    hypothesis: Inspect package scripts before forwarding filters so singleton flags already supplied by the script are not duplicated.
+    reason: In shared-baseline screening, the candidate failed one Infra attempt that baseline passed and increased cost 17.1%; it was rejected for correctness regression.
+  - id: gpt-5.6-sol-expanded-3
+    model: openai-codex/gpt-5.6-sol
+    hypothesis: Inspect configured source roots and prefer established project runners over ad hoc runtime import probes.
+    reason: In shared-baseline screening, correctness held and duration fell 5.9%, but cost increased 14.3% and tool errors increased by one; the candidate failed efficiency guardrails.

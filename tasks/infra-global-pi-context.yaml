@@ -1,0 +1,24 @@
+version: 1
+id: infra-global-pi-context
+repository: infra
+summary: Manage one shared global Pi instruction file on every host.
+baseRevision: 5e1edacb12b83ee2e4d999e92bb48f90de969ab3
+prompt: |
+  Every managed machine should receive the same global Pi instruction at `~/.pi/agent/AGENTS.md`: `Be extremely concise. Sacrifice grammer for the sake of concision.` Add that text as one shared resource and implement a dedicated shared pyinfra operation that creates the agent directory with mode 0755 and installs the file with mode 0644 without sudo. Linux deployments must use their explicit managed user's home and ownership; gunmetal must use the current deployment user's home without forcing ownership. Wire the operation explicitly into red, blue, white, and gunmetal after Pi itself is installed and before Pi extensions. Add focused contract coverage. Do not run pyinfra, mutate a host, or access secrets.
+agentTimeoutSeconds: 900
+executor:
+  type: container
+  os: linux
+  image: pi-self-harness/python313:bookworm
+  setupNetwork: bridge
+  agentNetwork: none
+setup:
+  command: uv venv --python /usr/local/bin/python && uv pip install pyinfra==3.9.2 pytest==9.1.1
+  timeoutSeconds: 900
+verification:
+  command: ./.venv/bin/pytest -q tests/unit/self_harness_global_pi_context_test.py
+  timeoutSeconds: 300
+  inject:
+    - source: verifiers/infra-global-pi-context_test.py
+      destination: tests/unit/self_harness_global_pi_context_test.py
+tags: [python, infra, config, safety]

@@ -5,7 +5,9 @@ diagnosis:
   - pi-extensions-private-etc
   - flyer-spindle-api-config
   - infra-stable-release-discovery
+  - flyer-structured-api-errors
 validation:
   - reel-swap-growth-pressure
+  - infra-global-pi-context
 test:
   - projectgm-complete-weekly-schedule
