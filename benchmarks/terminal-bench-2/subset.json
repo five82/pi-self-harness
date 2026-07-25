@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "dataset": "terminal-bench@2.0",
+  "harborRevision": "ff69e554fac1c751aa608e03de027db9043a2eac",
+  "sourceGit": "https://github.com/harbor-framework/terminal-bench-2.git",
+  "sourceRevision": "2fd12b88aafdd04a52c298e3940bcb189f9766d6",
+  "tasks": [
+    "break-filter-js-from-html",
+    "cancel-async-tasks",
+    "fix-git",
+    "large-scale-text-editing",
+    "sqlite-with-gcov"
+  ]
+}

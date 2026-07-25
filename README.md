@@ -16,8 +16,9 @@ Foundation only:
 - hidden verifier files injected only after the agent exits
 - full Pi JSON trace plus compact turns/tools/errors/tokens/cost summary
 - manifest validation, bounded diagnosis-evidence mining, tool-free declarative proposal generation, shared-baseline candidate screening, repeated suite execution, and matched profile comparison
+- pinned Terminal-Bench 2.0 subset support through Harbor's external-agent API
 
-Not implemented yet: remote Debian dispatch, hardened macOS isolation, confidence-aware promotion gates, automatic profile installation, or Terminal-Bench integration.
+Not implemented yet: remote Debian dispatch, hardened macOS isolation, confidence-aware promotion gates, automatic profile installation, or integrated Terminal-Bench comparison gates.
 
 ## Setup
 
@@ -132,6 +133,30 @@ npm run cli -- screen suites/personal.yaml \
 ```
 
 Screening runs only the diagnosis split, rotates profile order across tasks, fingerprints every profile, and ranks candidates using correctness followed by tool errors, cost, and duration. A candidate must avoid the comparison guardrails and show a measured improvement signal to be retained. Screening is explicitly preliminary: retained candidates still require the full interleaved three-trial experiment before validation.
+
+## Terminal-Bench regression subset
+
+The trusted Harbor adapter runs Pi on the host and forwards only `read`, `bash`, `edit`, and `write` over a mode-0600 Unix socket to Harbor's `BaseEnvironment`. Model credentials never enter task containers. The materializer pins five Terminal-Bench 2.0 tasks and adds only `[agent].network_mode = "no-network"`; source and materialized task hashes are recorded.
+
+```bash
+# Use the revisions in benchmarks/terminal-bench-2/subset.json.
+python integrations/harbor/prepare_terminal_bench.py \
+  --source /path/to/terminal-bench-2 \
+  --target /tmp/pi-terminal-bench-2
+
+cd /path/to/harbor
+PYTHONPATH=/path/to/pi-self-harness uv run harbor run \
+  --path /tmp/pi-terminal-bench-2 \
+  --agent integrations.harbor.pi_host_agent:PiHostAgent \
+  --model provider/model \
+  --agent-kwarg thinking=high \
+  --agent-kwarg profile_path=/path/to/pi-self-harness/profiles/baseline.yaml \
+  --n-concurrent 1 \
+  --jobs-dir /path/to/pi-self-harness/.runs/terminal-bench \
+  --yes
+```
+
+Keep the Harbor and dataset checkouts at the recorded revisions. Run baseline and frozen candidate as separate jobs with identical task, model, thinking, and Harbor settings. Do not expose these results to proposal generation before the candidate is frozen. Harbor comparison ingestion and automatic promotion gates remain future work.
 
 ## Evaluation strategy
 

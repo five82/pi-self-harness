@@ -40,7 +40,7 @@ The runner currently supports appended instructions and a subset of the four con
 
 All runtime and tool behavior changes must use Pi's public extension APIs. They must never require a Pi fork or modification to Pi's installed source.
 
-The existing `extension/container-tools.ts` is trusted evaluator infrastructure: it replaces the four filesystem/shell operations with container-routed implementations while leaving Pi and model credentials on the host. Future tool experiments must be implemented as similarly reviewed extension variants. A candidate profile may eventually select only an opaque, allowlisted variant ID; it may not provide code, a module path, or an extension to load.
+The existing `extension/container-tools.ts` is trusted evaluator infrastructure: it replaces the four filesystem/shell operations with container-routed implementations while leaving Pi and model credentials on the host. `extension/harbor-tools.ts` preserves the same boundary for established benchmarks: a fixed external Harbor agent owns a private Unix socket and invokes `BaseEnvironment`; the Pi subprocess and credentials remain on the host. Future tool experiments must be implemented as similarly reviewed extension variants. A candidate profile may eventually select only an opaque, allowlisted variant ID; it may not provide code, a module path, or an extension to load.
 
 “Trusted variant” means its code is human-reviewed, tested, frozen before the evaluation, stored outside the agent-visible worktree, and fingerprinted in result artifacts. The evaluated model and proposal model cannot edit it. A successful variant may be made available from the separate `pi-extensions` package rather than Pi core, but availability is not global activation.
 
@@ -74,6 +74,12 @@ The primary executor uses rootless Podman or Docker. The Pi/model process and cr
 Candidate profiles cannot supply or load executable extensions. Container profiles are currently limited to enabling a subset of the four extension-routed built-in tools. Allowlisted tool-variant selection is a future feature; today there is one trusted container-tool implementation.
 
 This materially isolates tools but is not a proof-grade sandbox: the container image and runtime are trusted dependencies, bind-mounted workspace writes reach the host worktree, and container-runtime vulnerabilities remain possible.
+
+### Terminal-Bench through Harbor
+
+The regression subset pins both the Terminal-Bench 2.0 source revision and a compatible Harbor revision. A trusted materialization step copies only named tasks, records source/materialized hashes, and adds an explicit no-network agent-phase policy without changing instructions, solutions, or verifiers. Harbor builds and verifies the benchmark normally. Host Pi loads only the reviewed bridge extension; profile files remain strictly declarative and are fingerprinted in Harbor metadata.
+
+The benchmark task and verifier assets stay on the host side of Harbor's environment boundary. Pi starts from an empty host directory with context/resource discovery disabled, so it cannot inspect the benchmark checkout, solutions, tests, active repository, or future Git history. Only the four selected tool operations reach the task container. Terminal-Bench output is held out from diagnosis/proposal evidence until a candidate is frozen. Current support creates Harbor job artifacts; automatic paired comparison and promotion gating are not yet implemented.
 
 ### macOS local
 

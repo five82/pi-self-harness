@@ -86,11 +86,11 @@ async function containerExec(config: RuntimeConfig, options: ExecOptions): Promi
     const abort = () => kill();
     options.signal?.addEventListener("abort", abort, { once: true });
 
-    child.stdout.on("data", (chunk: Buffer) => {
+    child.stdout!.on("data", (chunk: Buffer) => {
       stdout.push(chunk);
       options.onData?.(chunk);
     });
-    child.stderr.on("data", (chunk: Buffer) => {
+    child.stderr!.on("data", (chunk: Buffer) => {
       stderr.push(chunk);
       options.onData?.(chunk);
     });
@@ -107,7 +107,7 @@ async function containerExec(config: RuntimeConfig, options: ExecOptions): Promi
       resolve({ code: exitCode, stdout: Buffer.concat(stdout) });
     });
 
-    if (options.input !== undefined) child.stdin.end(options.input);
+    if (options.input !== undefined) child.stdin!.end(options.input);
   });
 }
 
