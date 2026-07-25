@@ -17,13 +17,13 @@ Foundation only:
 - full Pi JSON trace plus compact turns/tools/errors/tokens/cost summary
 - manifest validation, bounded diagnosis-evidence mining, tool-free declarative proposal generation, repeated suite execution, and matched profile comparison
 
-Not implemented yet: remote Debian dispatch, hardened macOS isolation, multi-candidate search, statistical significance testing, automatic profile installation, or Terminal-Bench integration.
+Not implemented yet: remote Debian dispatch, hardened macOS isolation, multi-candidate search, confidence-aware promotion gates, automatic profile installation, or Terminal-Bench integration.
 
 ## Setup
 
 ```bash
 npm install
-npm run images        # OrbStack/Docker images for TypeScript and Go tasks
+npm run images        # OrbStack/Docker images for TypeScript, Go, and Python tasks
 npm test
 npm run typecheck
 ```
@@ -73,13 +73,19 @@ npm run cli -- suite suites/personal.yaml \
 
 Tasks run sequentially. Aggregate correctness, duration, tool use, and reported model cost are saved under `.runs/suites/<suite>/`.
 
-Run the same split and trial count for a frozen candidate, then compare the summaries:
+For candidate evaluation, prefer an interleaved experiment. It alternates which profile runs first for each task/trial and fingerprints both profile files:
 
 ```bash
-npm run cli -- compare BASELINE-SUMMARY.json CANDIDATE-SUMMARY.json
+npm run cli -- experiment suites/personal.yaml \
+  --split diagnosis \
+  --baseline profiles/baseline.yaml \
+  --candidate profiles/candidate-one.yaml \
+  --model provider/model \
+  --thinking high \
+  --trials 3
 ```
 
-Comparison requires matching model, split, tasks, and trial numbers. Any correctness regression fails. Diagnosis candidates must show a material improvement; validation and locked-test comparisons require no regression. Three trials are required by default. These deterministic gates are preliminary and do not yet provide statistical significance testing.
+Use `compare BASELINE-SUMMARY.json CANDIDATE-SUMMARY.json` for already completed matched runs. Comparison requires matching model, split, tasks, and trial numbers. Any correctness regression fails. Diagnosis candidates must show a material improvement; validation and locked-test comparisons require no regression. Three trials are required by default. Reports include deterministic 95% paired-bootstrap intervals for cost, duration, and tool-error deltas; current promotion gates remain conservative fixed thresholds while the corpus is small.
 
 ## Mine and propose
 

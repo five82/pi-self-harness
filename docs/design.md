@@ -71,7 +71,9 @@ Only diagnosis summaries can become proposal evidence. The miner copies aggregat
 
 A separate ephemeral Pi process receives that evidence plus structured prior rejections from `config/proposal-history.yaml`, with tools, resource discovery, context files, sessions, and project trust disabled. Its response is parsed as a declarative profile. Unknown fields, executable extensions, unsupported tools, mixed prompt/tool changes, oversized instructions, and direct diagnosis-task references are rejected. A generated profile remains an untrusted candidate requiring review and evaluation.
 
-## Promotion policy
+## Experiments and promotion policy
+
+Baseline and candidate trials should be run through the interleaved experiment command. For each task/trial pair it alternates which profile runs first, reducing order and transient-provider effects. Experiment artifacts fingerprint both profile files and retain exact execution order. Comparison reports deterministic 95% paired-bootstrap intervals for per-pair cost, duration, and tool-error changes. Until the corpus is larger, fixed correctness and efficiency thresholds remain the promotion gates and intervals are supporting uncertainty evidence.
 
 A candidate should be promoted only when:
 

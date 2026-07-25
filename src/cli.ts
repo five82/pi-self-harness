@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, extname, join, resolve } from "node:path";
 import { loadProfile, loadRepositoryConfig, loadSuite, loadTask } from "./config.ts";
 import { compareSuiteRuns } from "./comparison.ts";
+import { buildExperimentPlan, experimentSummaryPaths, type ExperimentExecution, type ExperimentSummary } from "./experiment.ts";
 import { buildWeaknessEvidence, extractToolErrorEvidence, type ToolErrorEvidence, type WeaknessEvidence } from "./mining.ts";
 import {
   buildProposalPiArgs,
@@ -103,6 +104,9 @@ Commands:
   suite SUITE.yaml --split diagnosis|validation|test --profile PROFILE.yaml --model PROVIDER/MODEL [options]
       Run one suite split sequentially and write an aggregate summary.
 
+  experiment SUITE.yaml --split SPLIT --baseline PROFILE.yaml --candidate PROFILE.yaml --model PROVIDER/MODEL [options]
+      Run an interleaved repeated baseline/candidate experiment and compare it.
+
   compare BASELINE-SUMMARY.json CANDIDATE-SUMMARY.json [--minimum-trials N] [--output PATH]
       Compare paired suite runs and produce a bounded promotion recommendation.
 
@@ -116,7 +120,7 @@ Run options:
   --thinking LEVEL
   --pi-command PATH
   --runs-directory PATH
-  --trials N                 Suite repetitions; default 1.
+  --trials N                 Suite default 1; experiment default 3.
   --proposal-timeout SECONDS Proposal timeout; default 300.
   --keep-worktree
   --allow-unsandboxed-agent   Required acknowledgement for local (non-container) tasks.
@@ -294,6 +298,134 @@ async function runSuite(args: ParsedArgs) {
   if (!summary.passed) process.exitCode = 1;
 }
 
+async function runExperiment(args: ParsedArgs) {
+  const suitePath = args.positional[0];
+  if (!suitePath) throw new Error("experiment requires a suite manifest path");
+  const split = parseSplit(args);
+  const baselinePath = resolve(requiredFlag(args, "baseline"));
+  const candidatePath = resolve(requiredFlag(args, "candidate"));
+  const baseline = loadProfile(baselinePath);
+  const candidate = loadProfile(candidatePath);
+  if (baseline.id === candidate.id) throw new Error("Baseline and candidate profiles must differ");
+  const model = requiredFlag(args, "model");
+  const suite = loadSuite(resolve(suitePath));
+  const taskIds = taskIdsForSplit(suite, split);
+  if (!taskIds.length) throw new Error(`Suite ${suite.id} has no tasks in its ${split} split`);
+  const trials = positiveIntegerFlag(args, "trials", 3);
+  const minimumTrials = positiveIntegerFlag(args, "minimum-trials", 3);
+  const plan = buildExperimentPlan(taskIds, trials);
+
+  const tasksById = new Map(yamlFiles(join(ROOT, "tasks")).map((path) => {
+    const task = loadTask(path);
+    return [task.id, task] as const;
+  }));
+  const repositories = loadRepositoryConfig(repositoriesPath(args)).repositories;
+  const repositoriesById = new Map(repositories.map((repository) => [repository.id, repository]));
+  for (const taskId of taskIds) {
+    const task = tasksById.get(taskId);
+    if (!task) throw new Error(`Unknown task ${taskId}`);
+    const repository = repositoriesById.get(task.repository);
+    if (!repository) throw new Error(`Unknown repository ${task.repository}`);
+    if (!existsSync(repository.path)) throw new Error(`Repository path does not exist: ${repository.path}`);
+  }
+
+  const options = evaluationOptions(args);
+  const startedAt = new Date().toISOString();
+  const runId = `${startedAt.replace(/[:.]/g, "-")}_${suite.id}_${split}_${baseline.id}_vs_${candidate.id}`.replace(
+    /[^A-Za-z0-9._-]+/g,
+    "-",
+  );
+  const directory = join(options.runsDirectory, "experiments", suite.id, runId);
+  const paths = experimentSummaryPaths(directory);
+  await mkdir(directory, { recursive: true });
+  const baselineTasks: SuiteTaskResult[] = [];
+  const candidateTasks: SuiteTaskResult[] = [];
+  const executions: ExperimentExecution[] = [];
+  const profileByRole = { baseline, candidate };
+  const profileTasks = { baseline: baselineTasks, candidate: candidateTasks };
+  const profileHashes = {
+    baseline: createHash("sha256").update(await readFile(baselinePath)).digest("hex"),
+    candidate: createHash("sha256").update(await readFile(candidatePath)).digest("hex"),
+  };
+
+  const profileSummary = (role: "baseline" | "candidate") => summarizeSuite({
+    suite,
+    split,
+    profileId: profileByRole[role].id,
+    model,
+    thinking: options.thinking,
+    startedAt,
+    finishedAt: new Date().toISOString(),
+    trials,
+    tasks: profileTasks[role],
+  });
+  const writeProgress = async (status: ExperimentSummary["status"], comparison?: ReturnType<typeof compareSuiteRuns>) => {
+    const baselineSummary = profileSummary("baseline");
+    const candidateSummary = profileSummary("candidate");
+    await writeFile(paths.baseline, `${JSON.stringify(baselineSummary, null, 2)}\n`, { mode: 0o600 });
+    await writeFile(paths.candidate, `${JSON.stringify(candidateSummary, null, 2)}\n`, { mode: 0o600 });
+    const experiment: ExperimentSummary = {
+      version: 1,
+      runId,
+      suiteId: suite.id,
+      split,
+      model,
+      thinking: options.thinking,
+      trials,
+      startedAt,
+      finishedAt: status === "completed" ? new Date().toISOString() : undefined,
+      status,
+      baselineProfileId: baseline.id,
+      baselineProfileSha256: profileHashes.baseline,
+      candidateProfileId: candidate.id,
+      candidateProfileSha256: profileHashes.candidate,
+      baselineSummaryPath: paths.baseline,
+      candidateSummaryPath: paths.candidate,
+      comparisonPath: paths.comparison,
+      executions,
+      comparison,
+    };
+    await writeFile(paths.experiment, `${JSON.stringify(experiment, null, 2)}\n`, { mode: 0o600 });
+  };
+
+  for (const step of plan) {
+    const task = tasksById.get(step.taskId)!;
+    const repository = repositoriesById.get(task.repository)!;
+    const profile = profileByRole[step.profile];
+    let taskResult: SuiteTaskResult;
+    try {
+      const evaluation = await evaluate({ task, repository, profile, model, ...options });
+      taskResult = suiteTaskResult(evaluation.result, evaluation.resultPath, step.trial);
+    } catch (error) {
+      taskResult = {
+        taskId: task.id,
+        trial: step.trial,
+        passed: false,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+    profileTasks[step.profile].push(taskResult);
+    executions.push({
+      ...step,
+      profileId: profile.id,
+      passed: taskResult.passed,
+      resultPath: taskResult.resultPath,
+      error: taskResult.error,
+    });
+    console.log(
+      `${taskResult.passed ? "PASS" : "FAIL"} ${task.id} profile=${profile.id} trial=${step.trial} sequence=${step.sequence}`,
+    );
+    await writeProgress("running");
+  }
+
+  const comparison = compareSuiteRuns(profileSummary("baseline"), profileSummary("candidate"), minimumTrials);
+  await writeFile(paths.comparison, `${JSON.stringify(comparison, null, 2)}\n`, { mode: 0o600 });
+  await writeProgress("completed", comparison);
+  console.log(`${comparison.recommendation}: cost delta=${((comparison.delta.costFraction ?? 0) * 100).toFixed(1)}%`);
+  console.log(paths.experiment);
+  if (comparison.recommendation === "reject") process.exitCode = 1;
+}
+
 async function compare(args: ParsedArgs) {
   const [baselinePath, candidatePath] = args.positional;
   if (!baselinePath || !candidatePath) throw new Error("compare requires baseline and candidate summary paths");
@@ -432,6 +564,9 @@ async function main() {
       break;
     case "suite":
       await runSuite(args);
+      break;
+    case "experiment":
+      await runExperiment(args);
       break;
     case "compare":
       await compare(args);

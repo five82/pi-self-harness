@@ -1,0 +1,24 @@
+version: 1
+id: infra-stable-release-discovery
+repository: infra
+summary: Add validated deploy-time discovery of stable external releases.
+baseRevision: cd4ff617385d85735a462b0ed68ddfc7631e3e61
+prompt: |
+  Shared Linux operations need a safe way to follow stable release channels instead of copying version pins into every host config. Add a small `infra_shared.releases` module with three helpers: `latest_github_tag(repository)` returns the latest non-prerelease GitHub tag; `latest_npm_version()` returns the npm CLI package's stable `latest` version; and `latest_go_download(architecture)` returns `(version, filename, sha256)` for the latest stable official Linux Go archive for `amd64` or `arm64`. Discovery must run through pyinfra `Command` facts at deploy time, use bounded/failing HTTP commands, tightly validate all untrusted output, and raise clear errors when metadata is missing or malformed. Keep this change limited to reusable discovery helpers and focused tests; do not wire deployments, run pyinfra, contact live services in tests, or access secrets.
+agentTimeoutSeconds: 900
+executor:
+  type: container
+  os: linux
+  image: pi-self-harness/python313:bookworm
+  setupNetwork: bridge
+  agentNetwork: none
+setup:
+  command: uv venv --python /usr/local/bin/python && uv pip install pyinfra==3.9.2 pytest==9.1.1
+  timeoutSeconds: 900
+verification:
+  command: ./.venv/bin/pytest -q tests/unit/self_harness_stable_release_discovery_test.py
+  timeoutSeconds: 300
+  inject:
+    - source: verifiers/infra-stable-release-discovery_test.py
+      destination: tests/unit/self_harness_stable_release_discovery_test.py
+tags: [python, infra, validation, safety]

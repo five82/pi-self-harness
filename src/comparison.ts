@@ -1,3 +1,4 @@
+import { bootstrapMeanInterval, pairedFractionChanges, type ConfidenceInterval } from "./statistics.ts";
 import type { SuiteRunSummary, SuiteTaskResult } from "./suite.ts";
 
 const COST_REGRESSION_LIMIT = 0.05;
@@ -40,6 +41,14 @@ export interface SuiteComparison {
     durationFraction?: number;
     toolCalls: number;
     toolErrors: number;
+  };
+  uncertainty: {
+    method: "paired-bootstrap";
+    confidence: 0.95;
+    samples: 10_000;
+    costFraction?: ConfidenceInterval;
+    durationFraction?: ConfidenceInterval;
+    toolErrorsDelta?: ConfidenceInterval;
   };
   correctnessRegressions: Array<{ taskId: string; trial: number }>;
   correctnessImprovements: Array<{ taskId: string; trial: number }>;
@@ -113,6 +122,7 @@ export function compareSuiteRuns(
     if (!baseline.passed && candidate.passed) improvements.push(item);
   }
 
+  const orderedCandidateTasks = baselineTasks.map((task) => candidateByKey.get(key(task))!);
   const baseline = totals(baselineTasks);
   const candidate = totals(candidateTasks);
   const costFraction = fraction(candidate.cost, baseline.cost);
@@ -175,6 +185,31 @@ export function compareSuiteRuns(
       durationFraction,
       toolCalls: candidate.toolCalls - baseline.toolCalls,
       toolErrors: candidate.toolErrors - baseline.toolErrors,
+    },
+    uncertainty: {
+      method: "paired-bootstrap",
+      confidence: 0.95,
+      samples: 10_000,
+      costFraction: bootstrapMeanInterval(
+        pairedFractionChanges(
+          baselineTasks.map((task) => task.cost),
+          orderedCandidateTasks.map((task) => task.cost),
+        ),
+        { seed: 0x582c057 },
+      ),
+      durationFraction: bootstrapMeanInterval(
+        pairedFractionChanges(
+          baselineTasks.map((task) => task.durationMs),
+          orderedCandidateTasks.map((task) => task.durationMs),
+        ),
+        { seed: 0x582d057 },
+      ),
+      toolErrorsDelta: bootstrapMeanInterval(
+        baselineTasks.map((task, index) =>
+          (orderedCandidateTasks[index].toolErrors ?? 0) - (task.toolErrors ?? 0),
+        ),
+        { seed: 0x582e057 },
+      ),
     },
     correctnessRegressions: regressions,
     correctnessImprovements: improvements,

@@ -2,7 +2,7 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, writeFileSync } from "no
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { assertCommandAllowed, buildPiArgs, removeTemporaryRoot } from "../src/runner.ts";
+import { assertCommandAllowed, buildContainerName, buildPiArgs, removeTemporaryRoot } from "../src/runner.ts";
 import type { HarnessProfile, RepositoryDefinition, TaskDefinition } from "../src/types.ts";
 
 const task: TaskDefinition = {
@@ -37,6 +37,17 @@ describe("runner", () => {
     expect(args).toContain("Verify before finishing.");
     expect(args).toContain("/tmp/container-tools.ts");
     expect(args.at(-1)).toBe("Fix the bug.");
+  });
+
+  it("builds valid bounded names for long-running containers", () => {
+    const runId = `2026-07-24_${"very-long-task-and-profile-".repeat(5)}`;
+    const setup = buildContainerName(runId, "setup");
+    const agent = buildContainerName(runId, "agent");
+
+    expect(setup).toMatch(/^psh-[A-Za-z0-9_.-]+-setup$/);
+    expect(setup.length).toBeLessThanOrEqual(63);
+    expect(agent.length).toBeLessThanOrEqual(63);
+    expect(agent).not.toBe(setup);
   });
 
   it("removes read-only tool caches", async () => {

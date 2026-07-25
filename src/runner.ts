@@ -1,4 +1,5 @@
 import { constants } from "node:fs";
+import { createHash } from "node:crypto";
 import { copyFile, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -30,6 +31,14 @@ const CONTAINER_EXTENSION = fileURLToPath(new URL("../extension/container-tools.
 
 function safeId(value: string): string {
   return value.replace(/[^a-zA-Z0-9_.-]+/g, "-");
+}
+
+export function buildContainerName(runId: string, phase: "setup" | "agent"): string {
+  const hash = createHash("sha256").update(runId).digest("hex").slice(0, 8);
+  const prefix = "psh-";
+  const suffix = `-${hash}-${phase}`;
+  const body = safeId(runId).slice(0, 63 - prefix.length - suffix.length);
+  return `${prefix}${body}${suffix}`;
 }
 
 function mergeExecutor(repository: ExecutorRequirement | undefined, task: ExecutorRequirement | undefined): ExecutorRequirement {
@@ -313,7 +322,6 @@ export async function evaluate(options: EvaluateOptions): Promise<{ result: Eval
     timeoutMs: 30_000,
   });
   if (successful(piVersion)) result.piVersion = piVersion.stdoutTail.trim();
-  const containerBase = safeId(`psh-${runId}`).slice(-63);
   let activeContainer: string | undefined;
 
   const start = async (name: string, network: "none" | "bridge") => {
@@ -347,7 +355,7 @@ export async function evaluate(options: EvaluateOptions): Promise<{ result: Eval
 
   try {
     if (containerized && options.task.setup) {
-      await start(`${containerBase}-setup`.slice(-63), executor.setupNetwork ?? "bridge");
+      await start(buildContainerName(runId, "setup"), executor.setupNetwork ?? "bridge");
       result.setup = await runContainerCommand(
         options.task.setup,
         runtime,
@@ -377,7 +385,7 @@ export async function evaluate(options: EvaluateOptions): Promise<{ result: Eval
       }
     }
 
-    if (containerized) await start(`${containerBase}-agent`.slice(-63), executor.agentNetwork ?? "none");
+    if (containerized) await start(buildContainerName(runId, "agent"), executor.agentNetwork ?? "none");
 
     const requiredExtensions = containerized ? [CONTAINER_EXTENSION] : [];
     const env = containerized

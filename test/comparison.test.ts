@@ -39,6 +39,8 @@ describe("suite comparison", () => {
 
     expect(comparison.recommendation).toBe("advance-to-validation");
     expect(comparison.delta.costFraction).toBeCloseTo(-0.2);
+    expect(comparison.uncertainty.costFraction?.estimate).toBeCloseTo(-0.2);
+    expect(comparison.uncertainty.costFraction?.lower).toBeCloseTo(-0.2);
     expect(comparison.trials).toBe(3);
   });
 
