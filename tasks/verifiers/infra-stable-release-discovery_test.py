@@ -40,11 +40,23 @@ def test_self_harness_latest_github_tag_rejects_untrusted_output(monkeypatch, ou
         releases.latest_github_tag("owner/tool")
 
 
+def npm_fact_output(monkeypatch, version):
+    def get_fact(*args, **kwargs):
+        command = args[1]
+        if "dist-tags" in command:
+            return json.dumps({"latest": version})
+        if "python3 -c" in command:
+            return f"{version}\n"
+        return json.dumps({"version": version})
+
+    monkeypatch.setattr(releases, "host", SimpleNamespace(get_fact=get_fact))
+
+
 def test_self_harness_latest_npm_version_validates_registry_output(monkeypatch):
-    fact_output(monkeypatch, "12.3.1\n", json.dumps({"version": "12.3.1"}))
+    npm_fact_output(monkeypatch, "12.3.1")
     assert releases.latest_npm_version() == "12.3.1"
 
-    fact_output(monkeypatch, "latest", json.dumps({"version": "latest"}))
+    npm_fact_output(monkeypatch, "latest")
     with pytest.raises(RuntimeError):
         releases.latest_npm_version()
 

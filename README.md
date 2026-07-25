@@ -2,7 +2,7 @@
 
 Experimental, eval-driven harness optimization for [Pi](https://pi.dev).
 
-This project turns historical development work and established benchmarks into reproducible tasks, evaluates bounded model-specific harness profiles, and records auditable results. It does not train model weights or permit candidates to rewrite trusted code.
+This project turns historical development work and established benchmarks into reproducible tasks, evaluates bounded model-specific harness profiles, and records auditable results. It does not train model weights, modify or fork Pi core, or permit candidates to rewrite trusted code. Runtime changes use Pi's public extension APIs.
 
 ## Status
 
@@ -106,7 +106,7 @@ npm run cli -- propose-batch evidence.json \
   --output-directory profiles
 ```
 
-Batch proposal uses one model call and may conservatively return fewer candidates. The proposer is a separate ephemeral Pi process with no tools, resources, context files, or project trust. It also receives structured rejected hypotheses from [`config/proposal-history.yaml`](config/proposal-history.yaml) to discourage repeating known regressions. Its output must pass the profile schema and may contain only one appended instruction or a subset of the four container-routed tools. Generated profiles are never installed or promoted automatically; review one before evaluation.
+Batch proposal uses one model call and may conservatively return fewer candidates. The proposer is a separate ephemeral Pi process with no tools, resources, context files, or project trust. It also receives structured rejected hypotheses from [`config/proposal-history.yaml`](config/proposal-history.yaml) to discourage repeating known regressions. Its output must pass the profile schema and may contain only one appended instruction or enable a subset of the four container-routed tools. Generated profiles cannot supply executable extension code. Tool behavior currently has one trusted implementation; future tool variants must be prebuilt, human-reviewed Pi extensions selected only through allowlisted IDs. Generated profiles are never installed or promoted automatically; review one before evaluation.
 
 Screen up to five reviewed candidates with one shared baseline trial:
 
@@ -128,5 +128,6 @@ Screening runs only the diagnosis split, rotates profile order across tasks, fin
 - Safety tasks are a hard gate.
 - Live Pi sessions provide weakness-mining evidence but are not directly comparable evaluations.
 - Diagnosis, validation, and truly locked test splits remain separate.
+- Promotion is model-specific by default. Adding a variant to `pi-extensions` makes it available, not active for untested models; broader defaults require cross-model evaluation.
 
 Preliminary candidate outcomes and rejection rationale are recorded in [`docs/experiments.md`](docs/experiments.md).

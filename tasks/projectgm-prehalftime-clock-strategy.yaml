@@ -1,0 +1,21 @@
+version: 1
+id: projectgm-prehalftime-clock-strategy
+repository: projectgm
+summary: Make offenses use score, field position, and clock before halftime.
+baseRevision: 1437ccdc167afb71e339c538b4cf5fc830339a25
+prompt: |
+  ProjectGM's situational offense engages only in the second half, so teams routinely waste the final two minutes before halftime. Add a first-half strategy inside two minutes: a trailing offense should hurry from anywhere, and any offense at or beyond its own 35 should attack for points; an offense with neither reason should become run-heavy, drain the clock, and kneel when its remaining downs can end the half. Thread the full drive position into both situational pass-mix and pace calculations so field position governs those choices. Clock-stopping plays must remain unaffected. Do not enable endgame-only fourth-down desperation or the two-point chart in the first half, and preserve existing second-half behavior. Add focused tests and keep the change in the game simulation.
+agentTimeoutSeconds: 900
+executor:
+  type: container
+  os: linux
+  image: pi-self-harness/go126:bookworm
+  setupNetwork: none
+  agentNetwork: none
+verification:
+  command: go test ./...
+  timeoutSeconds: 900
+  inject:
+    - source: verifiers/projectgm-prehalftime-clock-strategy_test.go
+      destination: internal/sim/self_harness_prehalftime_clock_strategy_test.go
+tags: [go, simulation, clock-management]

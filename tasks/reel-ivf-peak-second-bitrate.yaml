@@ -1,0 +1,21 @@
+version: 1
+id: reel-ivf-peak-second-bitrate
+repository: reel
+summary: Measure an IVF probe's worst displayed-second bitrate.
+baseRevision: 917df9aa3b3dc7d20957192b0f8111094d1b5c0c
+prompt: |
+  Reel's target-quality search needs to reject probes whose short bitrate spikes exceed the decoder contract, but it can currently inspect only aggregate size. Add `PeakSecondBps(r io.Reader, fpsNum, fpsDen uint32) (float64, error)` to `internal/encoder/ivf.go`. It must scan a Reel-produced IVF stream, bucket each encoded frame payload by displayed second using the frame PTS and rational frame rate, and return the largest bucket in bits per second. Reject zero frame-rate components and malformed or truncated headers, frame records, and payloads; an empty valid IVF stream should return zero. Add focused tests and keep the change limited to pure IVF parsing. Native encoder libraries are intentionally unavailable, so use file-scoped Go tests rather than building or encoding with Reel.
+agentTimeoutSeconds: 900
+executor:
+  type: container
+  os: linux
+  image: pi-self-harness/go126:bookworm
+  setupNetwork: none
+  agentNetwork: none
+verification:
+  command: go test internal/encoder/ivf.go internal/encoder/self_harness_peak_second_bitrate_test.go
+  timeoutSeconds: 300
+  inject:
+    - source: verifiers/reel-ivf-peak-second-bitrate_test.go
+      destination: internal/encoder/self_harness_peak_second_bitrate_test.go
+tags: [go, parser, performance, safety]

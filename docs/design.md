@@ -4,7 +4,7 @@
 
 Empirically improve model-specific Pi harness profiles for five82's development work without allowing the model to rewrite trusted runtime or evaluator code.
 
-The system optimizes harness configuration, not model weights.
+The system optimizes harness configuration, not model weights or Pi core. Pi is an immutable, versioned dependency: this project never patches, forks, or carries private changes to Pi itself.
 
 ## Evaluation layers
 
@@ -32,9 +32,19 @@ Candidates may not change:
 - permissions or safety middleware
 - credentials
 - repository instructions
-- engine source
+- Pi core or other engine source
 
-The runner supports appended instructions and a subset of the four container-routed tools. Candidate profiles cannot load extensions or add capabilities. Runtime middleware candidates would require a separately designed trusted boundary.
+The runner currently supports appended instructions and a subset of the four container-routed tools. Candidate profiles cannot load extensions or add capabilities. Runtime middleware candidates would require a separately designed trusted boundary.
+
+### Pi extension boundary
+
+All runtime and tool behavior changes must use Pi's public extension APIs. They must never require a Pi fork or modification to Pi's installed source.
+
+The existing `extension/container-tools.ts` is trusted evaluator infrastructure: it replaces the four filesystem/shell operations with container-routed implementations while leaving Pi and model credentials on the host. Future tool experiments must be implemented as similarly reviewed extension variants. A candidate profile may eventually select only an opaque, allowlisted variant ID; it may not provide code, a module path, or an extension to load.
+
+“Trusted variant” means its code is human-reviewed, tested, frozen before the evaluation, stored outside the agent-visible worktree, and fingerprinted in result artifacts. The evaluated model and proposal model cannot edit it. A successful variant may be made available from the separate `pi-extensions` package rather than Pi core, but availability is not global activation.
+
+Improvement claims are scoped to the exact provider/model, thinking level, Pi version, profile, and evaluation suite. A promoted instruction or extension variant remains enabled only for the model combinations that passed promotion. Other models retain their existing behavior. A variant may become a general default only after separate cross-model evaluation.
 
 ## Run lifecycle
 
@@ -55,7 +65,7 @@ Pi resource discovery is disabled during runs. Repository `AGENTS.md`/`CLAUDE.md
 
 The primary executor uses rootless Podman or Docker. The Pi/model process and credentials stay on the host. A mandatory extension routes the built-in read, write, edit, and bash tools into the container, which receives only the detached worktree and a run-local cache. The agent container drops Linux capabilities, enables `no-new-privileges`, and has no network by default. Setup may run in a separate networked container before the restricted agent container starts.
 
-Candidate profiles cannot load executable extensions. Container profiles are currently limited to the four routed built-in tools.
+Candidate profiles cannot supply or load executable extensions. Container profiles are currently limited to enabling a subset of the four extension-routed built-in tools. Allowlisted tool-variant selection is a future feature; today there is one trusted container-tool implementation.
 
 This materially isolates tools but is not a proof-grade sandbox: the container image and runtime are trusted dependencies, bind-mounted workspace writes reach the host worktree, and container-runtime vulnerabilities remain possible.
 

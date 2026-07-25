@@ -28,12 +28,18 @@ The three-task diagnosis split completed three baseline trials: 9/9 passed, with
 
 ## 2026-07-25: task-corpus expansion
 
-Two more historical replays were added and their boundaries were validated before model evaluation:
+Four more historical replays were added and their boundaries were validated before model evaluation:
 
 - Diagnosis `flyer-structured-api-errors`: base `8ee85b65cbd38d4856818e19328d90b34b0ed44c`, historical fix `6a8befc54fbd6e291379347b27732173f96f615a`. The hidden verifier requires bounded structured API error handling; it fails at the base and passes at the fix.
 - Validation `infra-global-pi-context`: base `5e1edacb12b83ee2e4d999e92bb48f90de969ab3`, historical fix `13f6e1d510d8de06cfb4590e891b2387724d6d0b`. The hidden verifier covers shared resource content, Linux ownership, current-user behavior, and explicit host wiring; it fails at the base and passes at the fix.
+- Diagnosis `reel-ivf-peak-second-bitrate`: base `917df9aa3b3dc7d20957192b0f8111094d1b5c0c`, historical fix `2da7cf81fa89c0b34d782bd354ecacc464f3e27d`. Its file-scoped verifier exercises rational PTS bucketing and malformed IVF input without native libraries or encoding; it fails at the base and passes at the fix.
+- Diagnosis `projectgm-prehalftime-clock-strategy`: base `1437ccdc167afb71e339c538b4cf5fc830339a25`, historical fix `ef0dedb2cb531224c9f96dc45adfbdb5d7b17b8d`. Its verifier covers first-half pass mix, pace, kneeling, and endgame-only boundaries; it fails at the base and passes at the fix.
 
-The personal suite now has four diagnosis, two validation, and one locked-test task. Subsequent GPT-5.6 Sol smoke runs produced valid solutions for both additions; verifier-generalization details are recorded under excluded runs below.
+The personal suite now has six diagnosis, two validation, and one locked-test task. Subsequent GPT-5.6 Sol smoke runs produced valid solutions for all additions; verifier-generalization details are recorded under excluded runs below.
+
+## 2026-07-25: six-task diagnosis baseline
+
+Three GPT-5.6 Sol/high-thinking trials produced 18 semantically valid solutions, with $8.7453 reported cost, 394 tool calls, and 28 tool errors. The original suite artifact reports 17/18 because trial 2 of `infra-stable-release-discovery` used the npm registry's dist-tags endpoint, while the hidden verifier supplied only the different `/npm/latest` response shape. The implementation passes the corrected behavior-based verifier, as does the historical fix; the base still fails. The original result remains unchanged for audit and must not be mined as a genuine correctness failure.
 
 ## 2026-07-25: shared-baseline candidate screening
 
@@ -62,12 +68,13 @@ The candidate reduced one tool call, one tool error, and aggregate duration by 2
 
 The tool-free proposer received the one-trial diagnosis snapshot and declined to generate a profile because the evidence was insufficient. It used 840 input tokens, 49 output tokens, cost $0.0057, and produced no candidate file. This is the intended conservative behavior before repeated diagnosis evidence exists.
 
-## Excluded infrastructure-invalid runs
+## Excluded invalid runs
 
 - An early `flyer-spindle-api-config` baseline attempt mounted `/tmp` as non-executable, causing hidden Go test binaries to fail after a successful agent run. The mount now permits execution while retaining `nosuid` and `nodev`.
 - The first `reel-swap-growth-pressure` baseline attempt produced a correct patch, but the hidden verifier rejected its valid choice to retain the two-argument helper signature with an unnamed swap parameter. The verifier now behaviorally covers both historical and compatible signatures. It fails at the base revision, passes at the historical fix, and passes the rejected run's patch. A fresh baseline run passed.
 - The first `infra-stable-release-discovery` attempt exposed a container-name truncation bug: a long run ID was sliced to a name beginning with `-`, which Docker rejected. Container names now keep a `psh-` prefix and include a stable hash within the length limit.
 - Two subsequent Infra attempts produced semantically valid alternatives that exposed underspecified helper names and verifier assumptions about normalized versus raw npm metadata. The task now states its public API and the verifier accepts both command-side extraction and in-helper JSON parsing. It still fails at the base revision, passes at the historical fix, and a fresh baseline run passed.
+- Trial 2 of the six-task diagnosis baseline exposed another npm-response-shape assumption in `infra-stable-release-discovery`: the implementation correctly read the stable `latest` value from the registry dist-tags endpoint instead of the historical `/npm/latest` endpoint. The verifier now supplies endpoint-appropriate metadata. It fails at the base, passes the historical fix, and passes the trial's alternate patch. The suite artifact's 17/18 raw result is retained but its failure is excluded from correctness evidence.
 - The first expanded batch proposal completed at the provider but was reported as empty because its large JSON event exceeded the process tail buffer. Process output streams are now flushed before return and proposal traces are summarized from the complete JSONL artifact; the rerun generated three valid candidates.
 - The first three-candidate screening run was interrupted when OrbStack was closed. Four Pi Extensions attempts had run; all subsequent Flyer and Infra attempts failed at executor startup. Its ranking is invalid and ignored. Screening now aborts on the first detected container-runtime or executor failure and marks the artifact invalid rather than comparing infrastructure failures as candidate outcomes.
 - The first `flyer-structured-api-errors` baseline used a valid 64 KiB error-body cap, while the hidden verifier silently required at most 8 KiB. The verifier now accepts bounds through 64 KiB plus an overflow byte and still rejects unbounded reads. The original patch and a fresh baseline pass the corrected verifier.

@@ -6,6 +6,8 @@ diagnosis:
   - flyer-spindle-api-config
   - infra-stable-release-discovery
   - flyer-structured-api-errors
+  - reel-ivf-peak-second-bitrate
+  - projectgm-prehalftime-clock-strategy
 validation:
   - reel-swap-growth-pressure
   - infra-global-pi-context
