@@ -113,6 +113,36 @@ export interface ProcessResult {
   stderrTail: string;
 }
 
+export interface ReverificationResult {
+  version: 1;
+  reverificationId: string;
+  originalResultPath: string;
+  originalResultSha256: string;
+  agentPatchPath: string;
+  agentPatchSha256: string;
+  taskManifestPath: string;
+  taskManifestSha256: string;
+  verifierSha256: string;
+  taskId: string;
+  repositoryId: string;
+  sourceRevision: string;
+  executor: ExecutorType;
+  containerImage?: string;
+  containerImageId?: string;
+  startedAt: string;
+  finishedAt: string;
+  passed: boolean;
+  failureStage?: "executor" | "setup" | "patch" | "verification";
+  error?: string;
+  setup?: ProcessResult;
+  patchApplication?: ProcessResult;
+  verification?: ProcessResult;
+  injectedVerificationAssets?: string[];
+  worktree?: string;
+  containerCleanupError?: string;
+  cleanupError?: string;
+}
+
 export interface EvaluationResult {
   version: 1;
   runId: string;

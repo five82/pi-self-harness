@@ -19,7 +19,8 @@ import {
   parseProposedProfiles,
 } from "./proposal.ts";
 import { runProposalModel } from "./proposal-runner.ts";
-import { evaluate } from "./runner.ts";
+import { applyReverificationOverrides, loadVerifiedReverification } from "./reverification.ts";
+import { evaluate, reverify } from "./runner.ts";
 import {
   buildScreeningPlan,
   rankScreeningComparisons,
@@ -109,6 +110,9 @@ Commands:
   run TASK.yaml --profile PROFILE.yaml --model PROVIDER/MODEL [options]
       Run one task in a detached worktree and save artifacts under .runs/.
 
+  reverify RESULT.json --task TASK.yaml [options]
+      Reapply a captured agent patch and append a result from the current verifier.
+
   suite SUITE.yaml --split diagnosis|validation|test --profile PROFILE.yaml --model PROVIDER/MODEL [options]
       Run one suite split sequentially and write an aggregate summary.
 
@@ -121,7 +125,7 @@ Commands:
   compare BASELINE-SUMMARY.json CANDIDATE-SUMMARY.json [--minimum-trials N] [--output PATH]
       Compare paired suite runs and produce a bounded promotion recommendation.
 
-  mine DIAGNOSIS-SUMMARY.json [--output PATH]
+  mine DIAGNOSIS-SUMMARY.json [--reverifications RESULT.json,...] [--output PATH]
       Extract bounded, agent-visible weakness evidence from diagnosis results.
 
   propose EVIDENCE.json --id ID --model PROVIDER/MODEL --output PROFILE.yaml [--history PATH] [options]
@@ -138,7 +142,8 @@ Run options:
   --retain N                 Screening finalists; default 1.
   --proposal-timeout SECONDS Proposal timeout; default 300.
   --keep-worktree
-  --allow-unsandboxed-agent   Required acknowledgement for local (non-container) tasks.
+  --allow-unsandboxed-agent      Required acknowledgement for local agent tasks.
+  --allow-unsandboxed-verifier   Required acknowledgement for local reverification.
 `;
 }
 
@@ -213,6 +218,29 @@ async function run(args: ParsedArgs) {
   });
 
   console.log(`${result.passed ? "PASS" : "FAIL"} ${result.taskId} profile=${result.profileId}`);
+  console.log(resultPath);
+  if (!result.passed) process.exitCode = 1;
+}
+
+async function runReverification(args: ParsedArgs) {
+  const originalResultPath = args.positional[0];
+  if (!originalResultPath) throw new Error("reverify requires an evaluation result path");
+  const taskManifestPath = resolve(requiredFlag(args, "task"));
+  const task = loadTask(taskManifestPath);
+  const config = loadRepositoryConfig(repositoriesPath(args));
+  const repository = config.repositories.find((entry) => entry.id === task.repository);
+  if (!repository) throw new Error(`Unknown repository ${task.repository}`);
+  if (!existsSync(repository.path)) throw new Error(`Repository path does not exist: ${repository.path}`);
+
+  const { result, resultPath } = await reverify({
+    originalResultPath: resolve(originalResultPath),
+    task,
+    taskManifestPath,
+    repository,
+    keepWorktree: args.flags.get("keep-worktree") === true,
+    allowUnsandboxedVerifier: args.flags.get("allow-unsandboxed-verifier") === true,
+  });
+  console.log(`${result.passed ? "PASS" : "FAIL"} ${result.taskId} reverification=${result.reverificationId}`);
   console.log(resultPath);
   if (!result.passed) process.exitCode = 1;
 }
@@ -650,7 +678,13 @@ async function mine(args: ParsedArgs) {
     const tracePath = join(dirname(task.resultPath), "agent.jsonl");
     if (existsSync(tracePath)) toolErrors.set(task.resultPath, extractToolErrorEvidence(await readFile(tracePath, "utf8")));
   }
-  const evidence = buildWeaknessEvidence(summary, results, toolErrors);
+  const reverificationPaths = (flag(args, "reverifications") ?? "")
+    .split(",")
+    .map((path) => path.trim())
+    .filter(Boolean);
+  const reverifications = await Promise.all(reverificationPaths.map((path) => loadVerifiedReverification(resolve(path))));
+  const applied = applyReverificationOverrides(summary, results, reverifications);
+  const evidence = buildWeaknessEvidence(applied.summary, applied.resultsByPath, toolErrors, applied.evidence);
   const text = `${JSON.stringify(evidence, null, 2)}\n`;
   const output = flag(args, "output");
   if (output) {
@@ -825,6 +859,9 @@ async function main() {
       break;
     case "run":
       await run(args);
+      break;
+    case "reverify":
+      await runReverification(args);
       break;
     case "suite":
       await runSuite(args);

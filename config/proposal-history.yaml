@@ -20,3 +20,15 @@ rejections:
     model: openai-codex/gpt-5.6-sol
     hypothesis: Inspect configured source roots and prefer established project runners over ad hoc runtime import probes.
     reason: In shared-baseline screening, correctness held and duration fell 5.9%, but cost increased 14.3% and tool errors increased by one; the candidate failed efficiency guardrails.
+  - id: gpt-5.6-sol-six-task-1
+    model: openai-codex/gpt-5.6-sol
+    hypothesis: Confirm configured executables and paths before invocation, then avoid trying guessed alternatives after a missing-command or missing-path failure.
+    reason: Rejected before screening because it substantially repeated the previously rejected configured-runner and reactive missing-tool hypotheses.
+  - id: gpt-5.6-sol-six-task-2
+    model: openai-codex/gpt-5.6-sol
+    hypothesis: Inspect unfamiliar local API signatures and concrete return types before editing statically typed code.
+    reason: In the six-task shared-baseline screen, correctness held but cost and duration each increased 10.3%, tool calls increased by five, and tool errors increased by one; the candidate failed efficiency guardrails.
+  - id: gpt-5.6-sol-six-task-3
+    model: openai-codex/gpt-5.6-sol
+    hypothesis: Treat ordinary zero-match exploratory searches as information rather than failed validation commands.
+    reason: In the six-task shared-baseline screen, correctness held, cost fell 5.6%, duration fell 4.8%, and tool calls fell by 18, but tool errors increased by two; the candidate failed the tool-error guardrail.

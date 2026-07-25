@@ -14,6 +14,7 @@ This repository evaluates and evolves Pi harness profiles against reproducible t
 - Never patch, fork, or carry private changes to Pi core. Implement runtime and tool behavior only through Pi's public extension APIs.
 - If extension-variant selection is added, profiles may select only reviewed, allowlisted IDs; they may never supply executable extension code or module paths.
 - Do not expose hidden verifier material to the agent under evaluation.
+- Keep historical results immutable. Verifier corrections must produce explicit, hash-bound append-only reverification artifacts.
 - Prefer deterministic, hermetic tests. Mock Pi/model execution in unit tests.
 - Run `npm test` and `npm run typecheck` before handing work back.
 

@@ -41,6 +41,17 @@ The personal suite now has six diagnosis, two validation, and one locked-test ta
 
 Three GPT-5.6 Sol/high-thinking trials produced 18 semantically valid solutions, with $8.7453 reported cost, 394 tool calls, and 28 tool errors. The original suite artifact reports 17/18 because trial 2 of `infra-stable-release-discovery` used the npm registry's dist-tags endpoint, while the hidden verifier supplied only the different `/npm/latest` response shape. The implementation passes the corrected behavior-based verifier, as does the historical fix; the base still fails. The original result remains unchanged for audit and must not be mined as a genuine correctness failure.
 
+## 2026-07-25: six-task candidate screening
+
+Corrected diagnosis evidence produced three new hypotheses. The guessed-path candidate was rejected before evaluation because it repeated prior configured-runner and reactive missing-tool ideas. One valid shared-baseline screen evaluated the remaining two across all six diagnosis tasks; all 18 attempts passed.
+
+| Candidate hypothesis | Passed | Cost delta | Duration delta | Tool-call delta | Tool-error delta | Outcome |
+| --- | ---: | ---: | ---: | ---: | ---: | --- |
+| Inspect unfamiliar static API signatures | 6/6 | +10.3% | +10.3% | +5 | +1 | drop: efficiency |
+| Make optional zero-match searches non-failing | 6/6 | -5.6% | -4.8% | -18 | +2 | drop: tool-error guardrail |
+
+No candidate was retained. The second hypothesis had meaningful cost and tool-call improvements, but added one failed import probe and one overlapping-edit failure. These were not zero-match searches, yet one screening trial is insufficient reason to waive the fixed aggregate tool-error guardrail.
+
 ## 2026-07-25: shared-baseline candidate screening
 
 After the OrbStack-interrupted attempt was discarded, one valid diagnosis-only screen compared the three generated candidates against a shared baseline. All 12 task/profile attempts completed; baseline passed 3/3.

@@ -59,6 +59,12 @@ Improvement claims are scoped to the exact provider/model, thinking level, Pi ve
 
 Pi resource discovery is disabled during runs. Repository `AGENTS.md`/`CLAUDE.md` context remains active because it is part of real development behavior. The container-routing extension is trusted evaluator infrastructure, not candidate-controlled configuration.
 
+## Reverification
+
+Verifier corrections do not justify silently rewriting historical artifacts or paying for another model run. The `reverify` command reconstructs the recorded source revision in a fresh worktree, reruns trusted setup, applies the captured pre-verifier patch, injects the current hidden assets, and executes only the current verifier. Container reverification requires the original image digest; local reverification requires an explicit unsandboxed-verifier acknowledgement.
+
+Each result is append-only and records hashes of the original result, captured patch, task manifest, verifier command/assets, and container image. The original result and suite summary remain unchanged. Weakness mining accepts explicitly named, hash-validated reverifications and records the resulting verdict overrides in its evidence; it never discovers or applies them implicitly.
+
 ## Executors and safety
 
 ### Linux container

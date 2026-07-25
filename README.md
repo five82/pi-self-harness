@@ -60,6 +60,16 @@ Container tasks require Docker (OrbStack on macOS) or Podman. Docker is the macO
 
 Native macOS tasks still require `--allow-unsandboxed-agent` because temporary worktrees do not provide OS isolation. Review [`docs/design.md`](docs/design.md) before executing them.
 
+## Reverify a captured patch
+
+When a trusted hidden verifier is corrected, reapply an existing `agent.patch` to its recorded source revision instead of rerunning the model:
+
+```bash
+npm run cli -- reverify .runs/TASK/RUN/result.json --task tasks/TASK.yaml
+```
+
+Reverification requires the original container image digest, reruns trusted setup, injects only the current hidden assets, and appends a fingerprinted result under the original run's `reverifications/` directory. It never changes the original result or suite summary. Native tasks require `--allow-unsandboxed-verifier`.
+
 ## Run a suite split
 
 ```bash
@@ -92,7 +102,9 @@ Use `compare BASELINE-SUMMARY.json CANDIDATE-SUMMARY.json` for already completed
 Only diagnosis summaries may feed proposal generation. Mining selects bounded agent-visible metrics and final reports; verifier output is excluded.
 
 ```bash
-npm run cli -- mine DIAGNOSIS-SUMMARY.json --output evidence.json
+npm run cli -- mine DIAGNOSIS-SUMMARY.json \
+  --reverifications REVERIFICATION-RESULT.json \
+  --output evidence.json
 npm run cli -- propose evidence.json \
   --id candidate-one \
   --model provider/proposal-model \

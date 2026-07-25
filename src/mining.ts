@@ -1,3 +1,4 @@
+import type { ReverificationEvidence } from "./reverification.ts";
 import type { SuiteRunSummary } from "./suite.ts";
 import type { EvaluationResult, TraceSummary } from "./types.ts";
 
@@ -42,6 +43,7 @@ export interface WeaknessEvidence {
   totalDurationMs: number;
   totalToolCalls: number;
   totalToolErrors: number;
+  reverifications?: ReverificationEvidence[];
   tasks: WeaknessAttempt[];
 }
 
@@ -97,6 +99,7 @@ export function buildWeaknessEvidence(
   summary: SuiteRunSummary,
   resultsByPath: ReadonlyMap<string, EvaluationResult>,
   toolErrorsByResultPath: ReadonlyMap<string, ToolErrorEvidence[]> = new Map(),
+  reverifications: ReverificationEvidence[] = [],
 ): WeaknessEvidence {
   if (summary.split !== "diagnosis") throw new Error("Weakness mining only accepts diagnosis summaries");
 
@@ -138,6 +141,7 @@ export function buildWeaknessEvidence(
     totalDurationMs: tasks.reduce((sum, task) => sum + (task.durationMs ?? 0), 0),
     totalToolCalls: tasks.reduce((sum, task) => sum + (task.toolCalls ?? 0), 0),
     totalToolErrors: tasks.reduce((sum, task) => sum + (task.toolErrors ?? 0), 0),
+    reverifications: reverifications.length ? reverifications : undefined,
     tasks,
   };
 }
