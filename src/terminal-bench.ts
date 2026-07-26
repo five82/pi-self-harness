@@ -93,6 +93,9 @@ function trialFromJson(value: unknown, path: string): TerminalBenchTrial {
   const modelInfo = object(agentInfo.model_info, `${path}.agent_info.model_info`);
   const agentResult = object(trial.agent_result, `${path}.agent_result`);
   const metadata = object(agentResult.metadata, `${path}.agent_result.metadata`);
+  if (metadata.terminal_stop_reason !== "stop") {
+    throw new Error(`${path}: host Pi did not record a normal terminal stop`);
+  }
   const verifier = object(trial.verifier_result, `${path}.verifier_result`);
   const rewards = object(verifier.rewards, `${path}.verifier_result.rewards`);
   const timing = object(trial.agent_execution, `${path}.agent_execution`);

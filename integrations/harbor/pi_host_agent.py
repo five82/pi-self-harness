@@ -325,14 +325,18 @@ class PiHostAgent(BaseAgent):
         return args
 
     @staticmethod
-    def _populate_usage(path: Path, context: AgentContext) -> None:
+    def _populate_usage(path: Path, context: AgentContext) -> tuple[str | None, str | None]:
         totals = {"input": 0, "output": 0, "cacheRead": 0, "cost": 0.0}
+        terminal_reason: str | None = None
+        terminal_error: str | None = None
         for line in path.read_text(errors="replace").splitlines():
             try:
                 event = json.loads(line)
                 message = event.get("message") or {}
                 if event.get("type") != "message_end" or message.get("role") != "assistant":
                     continue
+                terminal_reason = message.get("stopReason")
+                terminal_error = message.get("errorMessage")
                 usage = message.get("usage") or {}
                 totals["input"] += usage.get("input", 0)
                 totals["output"] += usage.get("output", 0)
@@ -344,6 +348,7 @@ class PiHostAgent(BaseAgent):
         context.n_cache_tokens = int(totals["cacheRead"])
         context.n_output_tokens = int(totals["output"])
         context.cost_usd = float(totals["cost"]) or None
+        return terminal_reason, terminal_error
 
     @override
     async def run(self, instruction: str, environment: BaseEnvironment, context: AgentContext) -> None:
@@ -378,7 +383,7 @@ class PiHostAgent(BaseAgent):
             if return_code != 0:
                 tail = stderr_path.read_text(errors="replace")[-4000:]
                 raise RuntimeError(f"Host Pi exited {return_code}: {tail}")
-            self._populate_usage(stdout_path, context)
+            terminal_reason, terminal_error = self._populate_usage(stdout_path, context)
             context.metadata = {
                 "pi_version": self._version,
                 "extension_sha256": hashlib.sha256(self._extension_path.read_bytes()).hexdigest(),
@@ -388,7 +393,11 @@ class PiHostAgent(BaseAgent):
                 "profile_sha256": self._profile_sha256,
                 "benchmark_provenance_sha256": self._benchmark_provenance_sha256,
                 "benchmark_source_revision": self._benchmark_source_revision,
+                "terminal_stop_reason": terminal_reason,
             }
+            if terminal_reason != "stop":
+                detail = terminal_error or f"unexpected terminal stop reason {terminal_reason!r}"
+                raise RuntimeError(f"Host Pi did not complete normally: {detail}")
         except asyncio.CancelledError:
             if process and process.returncode is None:
                 os.killpg(process.pid, signal.SIGKILL)

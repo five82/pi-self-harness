@@ -36,6 +36,7 @@ async function makeJob(
           extension_sha256: "extension-sha",
           benchmark_provenance_sha256: "provenance-sha",
           benchmark_source_revision: "source-revision",
+          terminal_stop_reason: "stop",
           thinking: "high",
           profile_sha256: profileSha256,
         },

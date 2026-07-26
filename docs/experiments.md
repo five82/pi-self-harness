@@ -1,5 +1,11 @@
 # Experiments
 
+## 2026-07-26: initial Terminal-Bench subset baseline
+
+The first pinned five-task Harbor run completed with a raw reward of 3/5, no Harbor-reported exceptions, $1.0881 model cost, and 12m03s wall time. It is retained locally but excluded as regression evidence. `break-filter-js-from-html` ended in a provider cybersecurity-policy error that Pi reported in its JSON trace while exiting zero; the adapter now converts any non-`stop` terminal reason into a Harbor trial error. `sqlite-with-gcov` was impossible under the required no-network agent policy because its image omitted the compiler and gcov toolchain it expected the agent to install from the network.
+
+Before any candidate evaluation, those incompatible tasks were replaced with offline-solvable `db-wal-recovery` and `regex-log`. The three valid original tasks all passed. Terminal-Bench artifacts remain excluded from proposal evidence and are used only after a future candidate is frozen.
+
 ## 2026-07-24: explicit offline-environment instruction
 
 A preliminary GPT-5.6 Sol candidate told the agent not to run network-dependent checks and to use their offline components instead. It was evaluated once on `flyer-spindle-api-config` against the baseline profile.
