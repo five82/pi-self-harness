@@ -4,7 +4,9 @@
 
 The first pinned five-task Harbor run completed with a raw reward of 3/5, no Harbor-reported exceptions, $1.0881 model cost, and 12m03s wall time. It is retained locally but excluded as regression evidence. `break-filter-js-from-html` ended in a provider cybersecurity-policy error that Pi reported in its JSON trace while exiting zero; the adapter now converts any non-`stop` terminal reason into a Harbor trial error. `sqlite-with-gcov` was impossible under the required no-network agent policy because its image omitted the compiler and gcov toolchain it expected the agent to install from the network.
 
-Before any candidate evaluation, those incompatible tasks were replaced with offline-solvable `db-wal-recovery` and `regex-log`. The three valid original tasks all passed. Terminal-Bench artifacts remain excluded from proposal evidence and are used only after a future candidate is frozen.
+Before any candidate evaluation, those incompatible tasks were replaced with offline-solvable `db-wal-recovery` and `regex-log`. The three valid original tasks all passed.
+
+The corrected pinned subset then produced a valid GPT-5.6 Sol/high baseline: 4/5 reward, no exceptions, $0.8997 model cost, and 13m30s wall time. `cancel-async-tasks`, `fix-git`, `large-scale-text-editing`, and `regex-log` passed. `db-wal-recovery` legitimately failed: the agent recovered all 11 IDs and names but retained base values 100/200 instead of applying WAL updates 150/250. The Harbor comparison loader accepted a self-comparison of this artifact, establishing it as the external regression anchor. Terminal-Bench artifacts remain excluded from proposal evidence and are used only after a future candidate is frozen.
 
 ## 2026-07-24: explicit offline-environment instruction
 
